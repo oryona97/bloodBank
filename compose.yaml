@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bloodbank
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local_dev_password}
+      POSTGRES_DB: bloodbank
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - bloodbank_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bloodbank -d bloodbank']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+volumes:
+  bloodbank_data:

@@ -1,0 +1,44 @@
+{
+  "name": "blood-bank",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "vite --config client/vite.config.ts",
+    "dev:server": "tsx watch server/src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && vite build --config client/vite.config.ts && tsc -p server/tsconfig.build.json",
+    "start": "node dist/server/server/src/index.js",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "format": "prettier --write client server shared *.json *.ts *.md *.yaml .github/workflows/*.yml",
+    "format:check": "prettier --check client server shared *.json *.ts *.md *.yaml .github/workflows/*.yml",
+    "db:migrate": "tsx server/scripts/migrate.ts",
+    "db:seed": "tsx server/scripts/seed.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "pg": "^8.16.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/supertest": "^6.0.3",
+    "@vitejs/plugin-react": "^5.1.0",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.9.6",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "vite": "^7.2.2",
+    "vitest": "^4.1.11"
+  }
+}

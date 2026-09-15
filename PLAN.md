@@ -1,5 +1,37 @@
 # BECS assignment implementation plan
 
+## Development checklist
+
+Completed items use `[x]`. Items remain unchecked until implemented and verified.
+
+- [x] Stage 0: Read the assignment and document the compatibility and rarity tables.
+- [x] Stage 0: Choose TypeScript and PostgreSQL and connect the GitHub repository.
+- [x] Stage 1: Scaffold the React frontend, Express backend, and shared TypeScript types.
+- [x] Stage 2: Implement and test compatibility, rarity ranking, and allocation rules.
+- [x] Stage 3: Add PostgreSQL migrations, seed data, and transactional API endpoints.
+- [x] Stage 4: Build and verify donation intake and the inventory summary.
+- [x] Stage 5: Build and verify routine allocation preview and confirmation.
+- [x] Stage 6: Build and verify emergency O-negative dispensing.
+- [x] Stage 7: Pass type checks, production build, domain tests, and PostgreSQL integration tests.
+- [x] Stage 8: Verify the browser workflows and write setup and demo instructions.
+- [ ] Stage 9: Commit and push the working application and updated checklist.
+
+**Current work:** Final formatting/build checks and repository publication. The three screens work against PostgreSQL and have been exercised in the browser. Implementation follows the mixed-type, all-or-nothing allocation policy below.
+
+### Verification record
+
+- [x] 74 domain tests, including all 64 donor/recipient combinations.
+- [x] 16 integration tests against a separate PostgreSQL database.
+- [x] TypeScript checks and production build.
+- [x] Browser donation: inventory increased from 41 to 42 units.
+- [x] Browser routine preview: recommended 9 A+ and 1 O+; cancellation left inventory unchanged; confirmation issued 10 units.
+- [x] Browser shortage: a 1,000-unit request reported a 980-unit shortfall with no dispense action.
+- [x] Browser emergency: issued all 5 O-negative units; other types were unchanged and the empty-stock state appeared.
+- [x] Browser reload retained the resulting 27-unit inventory.
+- [x] Desktop and 390-pixel mobile layout inspected.
+- [x] Setup, test commands, operating assumptions, and demo walkthrough documented in README.md.
+- [ ] Verify the first GitHub Actions run after publication.
+
 ## Objective and scope
 
 Project repository: [oryona97/bloodBank](https://github.com/oryona97/bloodBank). Keep the frontend, backend, database migrations, and tests in this one repository.
@@ -12,11 +44,11 @@ The workspace initially contained the assignment document only. The user selecte
 
 ## Required screens
 
-| Screen | Inputs | Behavior and result |
-| --- | --- | --- |
-| Donation intake | Blood type, donation date, donor ID, full name | Validate input, record the donation, add one available unit, and show success and updated inventory. One submission equals one unit as a proposed simplifying decision. |
-| Routine dispensing | Recipient/requested blood type, positive whole-number quantity | Prefer the exact type. When stock is insufficient, show a compatible allocation recommendation with quantities and an explanation. Update inventory when the user confirms dispensing. |
-| Emergency dispensing | Emergency action | Show the available O-negative quantity. On confirmation, dispense every available O-negative unit. If none remain, show an error without changing inventory. |
+| Screen               | Inputs                                                         | Behavior and result                                                                                                                                                                    |
+| -------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Donation intake      | Blood type, donation date, donor ID, full name                 | Validate input, record the donation, add one available unit, and show success and updated inventory. One submission equals one unit as a proposed simplifying decision.                |
+| Routine dispensing   | Recipient/requested blood type, positive whole-number quantity | Prefer the exact type. When stock is insufficient, show a compatible allocation recommendation with quantities and an explanation. Update inventory when the user confirms dispensing. |
+| Emergency dispensing | Emergency action                                               | Show the available O-negative quantity. On confirmation, dispense every available O-negative unit. If none remain, show an error without changing inventory.                           |
 
 Show a small inventory summary on each screen. Three tabs in one window satisfy the three-interface requirement without needing separate applications.
 
@@ -24,16 +56,16 @@ Show a small inventory summary on each screen. Three tabs in one window satisfy 
 
 These values are transcribed from the supplied images and should be treated as fixed assignment data, rather than current population statistics.
 
-| Recipient type | Allowed donor types | Population share |
-| --- | --- | --- |
-| A+ | A+, A-, O+, O- | 34% |
-| O+ | O+, O- | 32% |
-| B+ | B+, B-, O+, O- | 17% |
-| AB+ | A+, A-, B+, B-, AB+, AB-, O+, O- | 7% |
-| A- | A-, O- | 4% |
-| O- | O- | 3% |
-| B- | B-, O- | 2% |
-| AB- | AB-, A-, B-, O- | 1% |
+| Recipient type | Allowed donor types              | Population share |
+| -------------- | -------------------------------- | ---------------- |
+| A+             | A+, A-, O+, O-                   | 34%              |
+| O+             | O+, O-                           | 32%              |
+| B+             | B+, B-, O+, O-                   | 17%              |
+| AB+            | A+, A-, B+, B-, AB+, AB-, O+, O- | 7%               |
+| A-             | A-, O-                           | 4%               |
+| O-             | O-                               | 3%               |
+| B-             | B-, O-                           | 2%               |
+| AB-            | AB-, A-, B-, O-                  | 1%               |
 
 Store compatibility as an explicit recipient-to-allowed-donors map. Use one shared function for all compatibility checks; never repeat the rules independently in the GUI.
 
@@ -88,49 +120,41 @@ Use `pg` (node-postgres) with parameterized SQL, a connection pool, and versione
 
 ### API endpoints
 
-| Method and route | Purpose |
-| --- | --- |
-| `GET /api/inventory` | Return available counts for all eight types, including zeros |
-| `POST /api/donations` | Validate and register one donated unit |
-| `POST /api/dispensing/preview` | Return a routine allocation or shortage without changing stock |
-| `POST /api/dispensing/confirm` | Revalidate the submitted request and proposed allocation, then issue atomically |
+| Method and route                 | Purpose                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| `GET /api/inventory`             | Return available counts for all eight types, including zeros                         |
+| `POST /api/donations`            | Validate and register one donated unit                                               |
+| `POST /api/dispensing/preview`   | Return a routine allocation or shortage without changing stock                       |
+| `POST /api/dispensing/confirm`   | Revalidate the submitted request and proposed allocation, then issue atomically      |
 | `POST /api/dispensing/emergency` | Issue all O- available when the transaction selects inventory, or report empty stock |
 
 Return field errors for invalid input and a conflict response when a routine preview is stale. Recompute compatibility and quantities on the server rather than trusting the submitted allocation. Use a unique request key for donation and dispensing writes; retries with the same key and payload return the original result, while reuse with different inputs is rejected.
 
-### Suggested source layout
+### Implemented source layout
 
 ```text
 client/src/
-  screens/
-    DonationScreen.tsx
-    RoutineDispensingScreen.tsx
-    EmergencyScreen.tsx
-  components/
-    InventorySummary.tsx
-    AllocationPreview.tsx
   api.ts
-  App.tsx
+  App.tsx                    # Three screen components, inventory, and activity
+  main.tsx
   styles.css
 server/src/
   domain/
-    bloodTypes.ts
     compatibility.ts
     allocation.ts
     allocation.test.ts
-    compatibility.test.ts
-  routes/
-    donations.ts
-    inventory.ts
-    dispensing.ts
   services/
-    donationService.ts
-    dispensingService.ts
+    inventoryService.ts      # Transactions, donations, and dispensing
   storage/
     database.ts
     inventoryRepository.ts
-  app.ts
+    migrate.ts
+  app.ts                     # API routes and error responses
+  index.ts
+  validation.ts
+  errors.ts
 server/migrations/
+server/scripts/
 server/tests/
 shared/
   apiTypes.ts
@@ -188,15 +212,15 @@ Use PostgreSQL `DATE` for donation dates, `TIMESTAMPTZ` for event timestamps, an
 
 ## Implementation sequence
 
-| Milestone | Work | Completion check |
-| --- | --- | --- |
-| 1. Confirm design | Scaffold React with TypeScript and Vite; confirm browser submission and dispensing assumptions | A short agreed scope and runnable empty app |
-| 2. Build rules | Add blood types, the compatibility table, rarity data, and a pure allocation function | All compatibility combinations and representative allocations pass tests |
-| 3. Add backend and persistence | Set up PostgreSQL, migrations, seeds, Express routes, and transactional services | API round trips work; data survives restart; failed operations leave stock unchanged |
-| 4. Build intake screen | Add input fields, validation, save action, and inventory summary | A valid donation increases the correct stock by one |
-| 5. Build routine screen | Add request form, allocation preview, shortage messages, and confirmation | Exact-match, alternative, and insufficient-stock cases work |
-| 6. Build emergency screen | Add O- total and dispense-all action | Only O- is issued; a second attempt with zero stock reports an error |
-| 7. Finish submission | Run end-to-end scenarios; add setup instructions, policy explanation, and demo data | The app runs on the chosen OS from documented instructions |
+| Milestone                      | Work                                                                                           | Completion check                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 1. Confirm design              | Scaffold React with TypeScript and Vite; confirm browser submission and dispensing assumptions | A short agreed scope and runnable empty app                                          |
+| 2. Build rules                 | Add blood types, the compatibility table, rarity data, and a pure allocation function          | All compatibility combinations and representative allocations pass tests             |
+| 3. Add backend and persistence | Set up PostgreSQL, migrations, seeds, Express routes, and transactional services               | API round trips work; data survives restart; failed operations leave stock unchanged |
+| 4. Build intake screen         | Add input fields, validation, save action, and inventory summary                               | A valid donation increases the correct stock by one                                  |
+| 5. Build routine screen        | Add request form, allocation preview, shortage messages, and confirmation                      | Exact-match, alternative, and insufficient-stock cases work                          |
+| 6. Build emergency screen      | Add O- total and dispense-all action                                                           | Only O- is issued; a second attempt with zero stock reports an error                 |
+| 7. Finish submission           | Run end-to-end scenarios; add setup instructions, policy explanation, and demo data            | The app runs on the chosen OS from documented instructions                           |
 
 ## Meaningful tests
 
