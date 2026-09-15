@@ -14,9 +14,9 @@ Completed items use `[x]`. Items remain unchecked until implemented and verified
 - [x] Stage 6: Build and verify emergency O-negative dispensing.
 - [x] Stage 7: Pass type checks, production build, domain tests, and PostgreSQL integration tests.
 - [x] Stage 8: Verify the browser workflows and write setup and demo instructions.
-- [ ] Stage 9: Commit and push the working application and updated checklist.
+- [x] Stage 9: Commit and push the working application and updated checklist.
 
-**Current work:** Final formatting/build checks and repository publication. The three screens work against PostgreSQL and have been exercised in the browser. Implementation follows the mixed-type, all-or-nothing allocation policy below.
+**Status:** All baseline implementation stages are complete. The application is pushed to `main`, all 90 automated tests pass, and GitHub CI is green. The next step is to try the local app using the README demo walkthrough. Implementation follows the mixed-type, all-or-nothing allocation policy below.
 
 ### Verification record
 
@@ -30,7 +30,7 @@ Completed items use `[x]`. Items remain unchecked until implemented and verified
 - [x] Browser reload retained the resulting 27-unit inventory.
 - [x] Desktop and 390-pixel mobile layout inspected.
 - [x] Setup, test commands, operating assumptions, and demo walkthrough documented in README.md.
-- [ ] Verify the first GitHub Actions run after publication.
+- [x] Verify the first GitHub Actions run after publication: [successful run for application commit 542ac9e](https://github.com/oryona97/bloodBank/actions/runs/34967259415).
 
 ## Objective and scope
 
