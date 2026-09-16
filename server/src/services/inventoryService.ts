@@ -62,6 +62,10 @@ export function registerDonation(pool: Pool, key: string, input: DonationInput) 
       'INSERT INTO blood_units(unit_id, blood_type, donation_date, donor_id, donor_full_name) VALUES ($1, $2, $3, $4, $5)',
       [unitId, input.bloodType, input.donationDate, input.donorId, input.donorFullName],
     );
+    await client.query(
+      'INSERT INTO audit_logs(action, details) VALUES ($1, $2::jsonb)',
+      ['DONATION', JSON.stringify(input)],
+    );
     return { unitId, bloodType: input.bloodType };
   });
 }
@@ -95,7 +99,12 @@ async function issue(
       [eventId, ids],
     );
   }
-  return { eventId, mode, quantity: lines.reduce((sum, line) => sum + line.quantity, 0), lines };
+  const receipt = { eventId, mode, quantity: lines.reduce((sum, line) => sum + line.quantity, 0), lines };
+  await client.query(
+    'INSERT INTO audit_logs(action, details) VALUES ($1, $2::jsonb)',
+    [`DISPENSE_${mode}`, JSON.stringify(receipt)],
+  );
+  return receipt;
 }
 
 export function confirmDispensing(

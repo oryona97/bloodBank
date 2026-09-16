@@ -249,9 +249,14 @@ export function App() {
                 Available inventory{' '}
                 <span className="count-pill">{total === null ? '—' : total} units</span>
               </h2>
-              <button className="text-button" onClick={() => void refresh()} disabled={refreshing}>
-                {refreshing ? 'Refreshing…' : '↻ Refresh stock'}
-              </button>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <a className="text-button" href="/api/export" download style={{ textDecoration: 'none' }}>
+                  ↓ Export Records
+                </a>
+                <button className="text-button" onClick={() => void refresh()} disabled={refreshing}>
+                  {refreshing ? 'Refreshing…' : '↻ Refresh stock'}
+                </button>
+              </div>
             </div>
             <div className="inventory-grid">
               {BLOOD_TYPES.map((type) => (

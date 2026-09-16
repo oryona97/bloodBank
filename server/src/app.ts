@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { ZodError } from 'zod';
 import { donationSchema, requestSchema, confirmSchema, requestKeySchema } from './validation.js';
 import { getInventory, getActivity } from './storage/inventoryRepository.js';
+import { getFullExport } from './storage/exportRepository.js';
 import {
   registerDonation,
   confirmDispensing,
@@ -47,6 +48,12 @@ export function createApp(pool: Pool) {
   });
   app.post('/api/dispensing/emergency', async (req, res) => {
     res.json(await emergencyDispensing(pool, requestKeySchema.parse(req.get('Idempotency-Key'))));
+  });
+  app.get('/api/export', async (_req, res) => {
+    const data = await getFullExport(pool);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', 'attachment; filename="bloodbank_export.json"');
+    res.json(data);
   });
   app.use('/api', (_req, res) => {
     res.status(404).json({ code: 'NOT_FOUND', error: 'API endpoint not found.' });
