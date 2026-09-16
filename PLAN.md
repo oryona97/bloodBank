@@ -2,6 +2,13 @@
 
 ## Development checklist
 
+### Submission materials
+
+- [x] Capture application screenshots using synthetic demonstration data.
+- [x] Write Hebrew explanations of the workflows, allocation strategy, and verification.
+- [x] Package and review the screenshots and submission guide.
+- [ ] Review the updated course slides when provided; final course-wide compliance remains pending.
+
 Completed items use `[x]`. Items remain unchecked until implemented and verified.
 
 - [x] Stage 0: Read the assignment and document the compatibility and rarity tables.

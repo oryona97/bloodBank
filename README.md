@@ -8,6 +8,12 @@ The first application is implemented: donation intake, routine allocation and co
 
 See [PLAN.md](PLAN.md) for the development checklist (`[x]` means completed), requirements, allocation rules, architecture, and verification results.
 
+## Submission materials
+
+The [Hebrew submission guide](docs/submission/guide.he.html) includes eight application screenshots, workflow explanations, allocation rules, and verification results. Download it and open it in a browser; all images are embedded for offline viewing.
+
+See the [documentation package](docs/BECS-submission.zip), [editable explanations](docs/submission/explanations.he.md), and [remaining submission checklist](docs/submission/README.he.md). Review against the updated course slides remains pending until they are provided.
+
 ## Stack
 
 - React, TypeScript, and Vite frontend
