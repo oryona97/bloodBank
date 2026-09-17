@@ -5,10 +5,12 @@ import type {
   BloodType,
   DispenseReceipt,
   DonationInput,
+  User,
 } from '../../../shared/apiTypes.js';
 import { planAllocation } from '../domain/allocation.js';
 import { AppError } from '../errors.js';
 import { getInventory } from '../storage/inventoryRepository.js';
+import { audit } from '../auth/audit.js';
 
 export async function mutate<T>(
   pool: Pool,
@@ -16,9 +18,10 @@ export async function mutate<T>(
   operation: string,
   payload: unknown,
   action: (client: PoolClient) => Promise<T>,
+  actor: User,
 ): Promise<T> {
   const fingerprint = createHash('sha256')
-    .update(JSON.stringify({ operation, payload }))
+    .update(JSON.stringify({ operation, payload, actorId: actor.id }))
     .digest('hex');
   const client = await pool.connect();
   try {
@@ -27,11 +30,11 @@ export async function mutate<T>(
     await client.query("SET LOCAL statement_timeout = '10s'");
     await client.query('SELECT id FROM inventory_lock WHERE id = 1 FOR UPDATE');
     const previous = await client.query(
-      'SELECT fingerprint, response FROM operation_requests WHERE request_key = $1',
+      'SELECT fingerprint, response, actor_id FROM operation_requests WHERE request_key = $1',
       [key],
     );
     if (previous.rowCount) {
-      if (previous.rows[0].fingerprint !== fingerprint)
+      if (previous.rows[0].actor_id !== actor.id || previous.rows[0].fingerprint !== fingerprint)
         throw new AppError(
           409,
           'REQUEST_KEY_REUSED',
@@ -42,8 +45,8 @@ export async function mutate<T>(
     }
     const response = await action(client);
     await client.query(
-      'INSERT INTO operation_requests(request_key, fingerprint, response) VALUES ($1, $2, $3::jsonb)',
-      [key, fingerprint, JSON.stringify(response)],
+      'INSERT INTO operation_requests(request_key, fingerprint, response, actor_id) VALUES ($1, $2, $3::jsonb, $4)',
+      [key, fingerprint, JSON.stringify(response), actor.id],
     );
     await client.query('COMMIT');
     return response;
@@ -55,19 +58,23 @@ export async function mutate<T>(
   }
 }
 
-export function registerDonation(pool: Pool, key: string, input: DonationInput) {
-  return mutate(pool, key, 'donation', input, async (client) => {
-    const unitId = randomUUID();
-    await client.query(
-      'INSERT INTO blood_units(unit_id, blood_type, donation_date, donor_id, donor_full_name) VALUES ($1, $2, $3, $4, $5)',
-      [unitId, input.bloodType, input.donationDate, input.donorId, input.donorFullName],
-    );
-    await client.query(
-      'INSERT INTO audit_logs(action, details) VALUES ($1, $2::jsonb)',
-      ['DONATION', JSON.stringify(input)],
-    );
-    return { unitId, bloodType: input.bloodType };
-  });
+export function registerDonation(pool: Pool, key: string, input: DonationInput, actor: User) {
+  return mutate(
+    pool,
+    key,
+    'donation',
+    input,
+    async (client) => {
+      const unitId = randomUUID();
+      await client.query(
+        'INSERT INTO blood_units(unit_id, blood_type, donation_date, donor_id, donor_full_name) VALUES ($1, $2, $3, $4, $5)',
+        [unitId, input.bloodType, input.donationDate, input.donorId, input.donorFullName],
+      );
+      await audit(client, actor, 'DONATION', { unitId, ...input });
+      return { unitId, bloodType: input.bloodType };
+    },
+    actor,
+  );
 }
 
 async function issue(
@@ -76,6 +83,7 @@ async function issue(
   recipientType: BloodType | null,
   quantity: number | null,
   lines: AllocationLine[],
+  actor: User,
 ): Promise<DispenseReceipt> {
   const eventId = randomUUID();
   await client.query(
@@ -99,11 +107,13 @@ async function issue(
       [eventId, ids],
     );
   }
-  const receipt = { eventId, mode, quantity: lines.reduce((sum, line) => sum + line.quantity, 0), lines };
-  await client.query(
-    'INSERT INTO audit_logs(action, details) VALUES ($1, $2::jsonb)',
-    [`DISPENSE_${mode}`, JSON.stringify(receipt)],
-  );
+  const receipt = {
+    eventId,
+    mode,
+    quantity: lines.reduce((sum, line) => sum + line.quantity, 0),
+    lines,
+  };
+  await audit(client, actor, `DISPENSE_${mode}`, receipt);
   return receipt;
 }
 
@@ -111,29 +121,44 @@ export function confirmDispensing(
   pool: Pool,
   key: string,
   input: { recipientType: BloodType; quantity: number; lines: AllocationLine[] },
+  actor: User,
 ) {
-  return mutate(pool, key, 'routine', input, async (client) => {
-    const plan = planAllocation(input.recipientType, input.quantity, await getInventory(client));
-    if (!plan.canFulfill || JSON.stringify(plan.lines) !== JSON.stringify(input.lines)) {
-      throw new AppError(
-        409,
-        'STOCK_CHANGED',
-        'The allocation has changed. Preview the request again before dispensing.',
-      );
-    }
-    return issue(client, 'ROUTINE', input.recipientType, input.quantity, plan.lines);
-  });
+  return mutate(
+    pool,
+    key,
+    'routine',
+    input,
+    async (client) => {
+      const plan = planAllocation(input.recipientType, input.quantity, await getInventory(client));
+      if (!plan.canFulfill || JSON.stringify(plan.lines) !== JSON.stringify(input.lines)) {
+        throw new AppError(
+          409,
+          'STOCK_CHANGED',
+          'The allocation has changed. Preview the request again before dispensing.',
+        );
+      }
+      return issue(client, 'ROUTINE', input.recipientType, input.quantity, plan.lines, actor);
+    },
+    actor,
+  );
 }
 
-export function emergencyDispensing(pool: Pool, key: string) {
-  return mutate(pool, key, 'emergency', {}, async (client) => {
-    const quantity = (await getInventory(client))['O-'];
-    if (!quantity)
-      throw new AppError(
-        409,
-        'EMPTY_EMERGENCY_STOCK',
-        'No O-negative units are available for emergency dispensing.',
-      );
-    return issue(client, 'EMERGENCY', null, null, [{ bloodType: 'O-', quantity }]);
-  });
+export function emergencyDispensing(pool: Pool, key: string, actor: User) {
+  return mutate(
+    pool,
+    key,
+    'emergency',
+    {},
+    async (client) => {
+      const quantity = (await getInventory(client))['O-'];
+      if (!quantity)
+        throw new AppError(
+          409,
+          'EMPTY_EMERGENCY_STOCK',
+          'No O-negative units are available for emergency dispensing.',
+        );
+      return issue(client, 'EMERGENCY', null, null, [{ bloodType: 'O-', quantity }], actor);
+    },
+    actor,
+  );
 }

@@ -1,5 +1,7 @@
 # BECS assignment implementation plan
 
+> For the HIPAA/login/roles extension and its interruption recovery checkpoint, read [HIPAA_IMPLEMENTATION.md](HIPAA_IMPLEMENTATION.md). The plan below describes the earlier BECS work.
+
 ## Development checklist
 
 ### Submission materials

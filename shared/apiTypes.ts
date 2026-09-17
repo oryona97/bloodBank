@@ -1,4 +1,20 @@
 export const BLOOD_TYPES = ['A+', 'O+', 'B+', 'AB+', 'A-', 'O-', 'B-', 'AB-'] as const;
+export const ROLES = ['ADMIN', 'STAFF', 'RESEARCHER'] as const;
+export type Role = (typeof ROLES)[number];
+export type User = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: Role;
+  active: boolean;
+  mustChangePassword: boolean;
+};
+export type AuthResponse = { user: User; csrfToken: string; expiresAt: string };
+export type ResearchSummary = {
+  throughYear: number;
+  minimumGroupSize: number;
+  rows: { year: number; bloodType: BloodType; donations: number | null }[];
+};
 export type BloodType = (typeof BLOOD_TYPES)[number];
 export type Inventory = Record<BloodType, number>;
 export type AllocationLine = { bloodType: BloodType; quantity: number };

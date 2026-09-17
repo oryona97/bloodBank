@@ -5,6 +5,8 @@ import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { createPool } from '../src/storage/database.js';
 import { migrate } from '../src/storage/migrate.js';
+import { login, testUser, resetTestData } from './authHelpers.js';
+import type { User } from '../../shared/apiTypes.js';
 import { mutate } from '../src/services/inventoryService.js';
 import { emptyInventory, type Allocation, type BloodType } from '../../shared/apiTypes.js';
 
@@ -20,6 +22,8 @@ if (
 }
 const pool = createPool(connection);
 const app = createApp(pool);
+let client: Awaited<ReturnType<typeof login>>['agent'];
+let staff: User;
 const donation = (bloodType: BloodType = 'A+') => ({
   bloodType,
   donationDate: '2026-01-01',
@@ -27,35 +31,33 @@ const donation = (bloodType: BloodType = 'A+') => ({
   donorFullName: 'Synthetic Test Donor',
 });
 function add(type: BloodType = 'A+', key = randomUUID()) {
-  return request(app).post('/api/donations').set('Idempotency-Key', key).send(donation(type));
+  return client.post('/api/donations').set('Idempotency-Key', key).send(donation(type));
 }
 async function preview(recipientType: BloodType, quantity: number): Promise<Allocation> {
-  const response = await request(app)
-    .post('/api/dispensing/preview')
-    .send({ recipientType, quantity });
+  const response = await client.post('/api/dispensing/preview').send({ recipientType, quantity });
   expect(response.status).toBe(200);
   return response.body as Allocation;
 }
 function confirm(plan: Allocation, key = randomUUID()) {
-  return request(app)
+  return client
     .post('/api/dispensing/confirm')
     .set('Idempotency-Key', key)
     .send({ recipientType: plan.recipientType, quantity: plan.quantity, lines: plan.lines });
 }
 function emergency(key = randomUUID()) {
-  return request(app).post('/api/dispensing/emergency').set('Idempotency-Key', key).send({});
+  return client.post('/api/dispensing/emergency').set('Idempotency-Key', key).send({});
 }
 async function inventory() {
-  return (await request(app).get('/api/inventory')).body.inventory;
+  return (await client.get('/api/inventory')).body.inventory;
 }
 
 beforeAll(async () => {
   await migrate(pool);
 });
 beforeEach(async () => {
-  await pool.query(
-    'TRUNCATE operation_requests, dispense_event_units, dispense_events, blood_units',
-  );
+  await resetTestData(pool);
+  staff = await testUser(pool, 'STAFF');
+  client = (await login(app, staff.username)).agent;
 });
 afterAll(async () => {
   await pool.end();
@@ -64,7 +66,7 @@ afterAll(async () => {
 describe('PostgreSQL-backed API', () => {
   it('returns all eight zero counts and health status', async () => {
     expect(await inventory()).toEqual(emptyInventory());
-    expect((await request(app).get('/api/health')).status).toBe(200);
+    expect((await client.get('/api/health')).status).toBe(200);
   });
   it('records multiple donations from the same donor and preserves leading zeros', async () => {
     expect((await add()).status).toBe(201);
@@ -82,7 +84,7 @@ describe('PostgreSQL-backed API', () => {
       { donationDate: '2999-01-01' },
       { donorFullName: ' ' },
     ]) {
-      const response = await request(app)
+      const response = await client
         .post('/api/donations')
         .set('Idempotency-Key', randomUUID())
         .send({ ...donation(), ...change });
@@ -94,15 +96,15 @@ describe('PostgreSQL-backed API', () => {
   it('rejects invalid quantities and missing request keys', async () => {
     for (const quantity of [0, -1, 1.2, '2']) {
       expect(
-        (await request(app).post('/api/dispensing/preview').send({ recipientType: 'A+', quantity }))
+        (await client.post('/api/dispensing/preview').send({ recipientType: 'A+', quantity }))
           .status,
       ).toBe(400);
     }
-    expect((await request(app).post('/api/donations').send(donation())).status).toBe(400);
+    expect((await client.post('/api/donations').send(donation())).status).toBe(400);
   });
   it('does not mutate stock on preview and uses oldest donation first', async () => {
     const first = await add();
-    await request(app)
+    await client
       .post('/api/donations')
       .set('Idempotency-Key', randomUUID())
       .send({ ...donation(), donationDate: '2025-01-01' });
@@ -192,13 +194,21 @@ describe('PostgreSQL-backed API', () => {
     const unit = await add();
     const key = randomUUID();
     await expect(
-      mutate(pool, key, 'failure-test', {}, async (client) => {
-        await client.query("UPDATE blood_units SET status = 'DISPENSED'");
-        await client.query("INSERT INTO dispense_events(event_id, mode) VALUES ($1, 'EMERGENCY')", [
-          randomUUID(),
-        ]);
-        throw new Error('Simulated failure after writes');
-      }),
+      mutate(
+        pool,
+        key,
+        'failure-test',
+        {},
+        async (client) => {
+          await client.query("UPDATE blood_units SET status = 'DISPENSED'");
+          await client.query(
+            "INSERT INTO dispense_events(event_id, mode) VALUES ($1, 'EMERGENCY')",
+            [randomUUID()],
+          );
+          throw new Error('Simulated failure after writes');
+        },
+        staff,
+      ),
     ).rejects.toThrow('Simulated failure');
     expect((await inventory())['A+']).toBe(1);
     expect(
@@ -227,9 +237,8 @@ describe('PostgreSQL-backed API', () => {
     await add('B-');
     const freshPool = createPool(connection);
     try {
-      expect((await request(createApp(freshPool)).get('/api/inventory')).body.inventory['B-']).toBe(
-        1,
-      );
+      const freshClient = (await login(createApp(freshPool), staff.username)).agent;
+      expect((await freshClient.get('/api/inventory')).body.inventory['B-']).toBe(1);
     } finally {
       await freshPool.end();
     }

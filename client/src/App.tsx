@@ -125,7 +125,7 @@ function useAction() {
   return { busy, error, fields, run };
 }
 
-export function App() {
+export function App({ canExport = false }: { canExport?: boolean }) {
   const [screen, setScreen] = useState<Screen>('donation');
   const [data, setData] = useState<InventoryResponse | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -250,10 +250,21 @@ export function App() {
                 <span className="count-pill">{total === null ? '—' : total} units</span>
               </h2>
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <a className="text-button" href="/api/export" download style={{ textDecoration: 'none' }}>
-                  ↓ Export Records
-                </a>
-                <button className="text-button" onClick={() => void refresh()} disabled={refreshing}>
+                {canExport && (
+                  <a
+                    className="text-button"
+                    href="/api/export"
+                    download
+                    style={{ textDecoration: 'none' }}
+                  >
+                    ↓ Export Records
+                  </a>
+                )}
+                <button
+                  className="text-button"
+                  onClick={() => void refresh()}
+                  disabled={refreshing}
+                >
                   {refreshing ? 'Refreshing…' : '↻ Refresh stock'}
                 </button>
               </div>

@@ -11,10 +11,19 @@ import {
 } from './services/inventoryService.js';
 import { planAllocation } from './domain/allocation.js';
 import { AppError } from './errors.js';
+import { actor, adminRoutes, authenticate, authorize, authRoutes } from './auth/routes.js';
+import { audit } from './auth/audit.js';
+import { getResearchSummary } from './storage/researchRepository.js';
 
 export function createApp(pool: Pool) {
   const app = express();
   app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Referrer-Policy', 'no-referrer');
+    res.set('X-Frame-Options', 'DENY');
+    next();
+  });
   app.use(express.json({ limit: '16kb' }));
   app.use('/api', (_req, res, next) => {
     res.set('Cache-Control', 'no-store');
@@ -24,32 +33,59 @@ export function createApp(pool: Pool) {
     await pool.query('SELECT id FROM inventory_lock WHERE id = 1');
     res.json({ status: 'ok' });
   });
-  app.get('/api/inventory', async (_req, res) => {
+  app.use('/api/auth', authRoutes(pool));
+  app.use('/api', authenticate(pool));
+  app.use('/api/admin', adminRoutes(pool));
+  app.get(
+    '/api/research/summary',
+    authorize(pool, 'ADMIN', 'STAFF', 'RESEARCHER'),
+    async (_req, res) => {
+      res.json(await getResearchSummary(pool));
+    },
+  );
+  app.get('/api/inventory', authorize(pool, 'ADMIN', 'STAFF'), async (_req, res) => {
     const [inventory, activity] = await Promise.all([getInventory(pool), getActivity(pool)]);
     res.json({ inventory, activity });
   });
-  app.post('/api/donations', async (req, res) => {
+  app.post('/api/donations', authorize(pool, 'ADMIN', 'STAFF'), async (req, res) => {
     const input = donationSchema.parse(req.body);
     res
       .status(201)
       .json(
-        await registerDonation(pool, requestKeySchema.parse(req.get('Idempotency-Key')), input),
+        await registerDonation(
+          pool,
+          requestKeySchema.parse(req.get('Idempotency-Key')),
+          input,
+          actor(res),
+        ),
       );
   });
-  app.post('/api/dispensing/preview', async (req, res) => {
+  app.post('/api/dispensing/preview', authorize(pool, 'ADMIN', 'STAFF'), async (req, res) => {
     const input = requestSchema.parse(req.body);
     res.json(planAllocation(input.recipientType, input.quantity, await getInventory(pool)));
   });
-  app.post('/api/dispensing/confirm', async (req, res) => {
+  app.post('/api/dispensing/confirm', authorize(pool, 'ADMIN', 'STAFF'), async (req, res) => {
     const input = confirmSchema.parse(req.body);
     res.json(
-      await confirmDispensing(pool, requestKeySchema.parse(req.get('Idempotency-Key')), input),
+      await confirmDispensing(
+        pool,
+        requestKeySchema.parse(req.get('Idempotency-Key')),
+        input,
+        actor(res),
+      ),
     );
   });
-  app.post('/api/dispensing/emergency', async (req, res) => {
-    res.json(await emergencyDispensing(pool, requestKeySchema.parse(req.get('Idempotency-Key'))));
+  app.post('/api/dispensing/emergency', authorize(pool, 'ADMIN', 'STAFF'), async (req, res) => {
+    res.json(
+      await emergencyDispensing(
+        pool,
+        requestKeySchema.parse(req.get('Idempotency-Key')),
+        actor(res),
+      ),
+    );
   });
-  app.get('/api/export', async (_req, res) => {
+  app.get('/api/export', authorize(pool, 'ADMIN'), async (_req, res) => {
+    await audit(pool, actor(res), 'EXPORT_REQUESTED');
     const data = await getFullExport(pool);
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', 'attachment; filename="bloodbank_export.json"');
@@ -72,7 +108,8 @@ export function createApp(pool: Pool) {
     } else if (error instanceof SyntaxError && 'body' in error) {
       res.status(400).json({ code: 'INVALID_JSON', error: 'The request must contain valid JSON.' });
     } else {
-      console.error('Request failed:', error instanceof Error ? error.message : 'Unknown error');
+      // Database error messages can contain submitted PHI. Keep logs generic.
+      console.error('Request failed: internal storage or service error.');
       res.status(503).json({
         code: 'SERVICE_UNAVAILABLE',
         error: 'The database is temporarily unavailable. Retry the same action shortly.',

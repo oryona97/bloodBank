@@ -15,6 +15,8 @@
     "format": "prettier --write client server shared *.json *.ts *.md *.yaml .github/workflows/*.yml",
     "format:check": "prettier --check client server shared *.json *.ts *.md *.yaml .github/workflows/*.yml",
     "db:migrate": "tsx server/scripts/migrate.ts",
+    "db:admin": "tsx server/scripts/bootstrap-admin.ts",
+    "db:runtime-role": "tsx server/scripts/runtime-role.ts",
     "db:seed": "tsx server/scripts/seed.ts"
   },
   "dependencies": {
