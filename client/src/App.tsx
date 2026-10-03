@@ -250,10 +250,19 @@ export function App() {
                 <span className="count-pill">{total === null ? '—' : total} units</span>
               </h2>
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <a className="text-button" href="/api/export" download style={{ textDecoration: 'none' }}>
+                <a
+                  className="text-button"
+                  href="/api/export"
+                  download
+                  style={{ textDecoration: 'none' }}
+                >
                   ↓ Export Records
                 </a>
-                <button className="text-button" onClick={() => void refresh()} disabled={refreshing}>
+                <button
+                  className="text-button"
+                  onClick={() => void refresh()}
+                  disabled={refreshing}
+                >
                   {refreshing ? 'Refreshing…' : '↻ Refresh stock'}
                 </button>
               </div>
@@ -563,7 +572,21 @@ function RoutineScreen({ disabled, completed }: ScreenProps) {
             </div>
           )}
           <div className="form-footer">
-            <button className="secondary-button" disabled={busy} onClick={() => setPlan(null)}>
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() =>
+                void confirm.run(
+                  '/activities/cancel',
+                  {
+                    operation: 'ROUTINE',
+                    recipientType: plan.recipientType,
+                    quantity: plan.quantity,
+                  },
+                  () => setPlan(null),
+                )
+              }
+            >
               Cancel
             </button>
             {plan.canFulfill && (
@@ -667,7 +690,11 @@ function EmergencyScreen({
               <button
                 className="secondary-button"
                 disabled={action.busy}
-                onClick={() => setConfirming(false)}
+                onClick={() =>
+                  void action.run('/activities/cancel', { operation: 'EMERGENCY' }, () =>
+                    setConfirming(false),
+                  )
+                }
               >
                 Cancel
               </button>

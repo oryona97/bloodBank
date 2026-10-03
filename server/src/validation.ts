@@ -48,3 +48,13 @@ export const donationSchema = z
   })
   .strict();
 export const requestKeySchema = z.string().uuid();
+export const cancellationSchema = z.discriminatedUnion('operation', [
+  z
+    .object({
+      operation: z.literal('ROUTINE'),
+      recipientType: bloodTypeSchema,
+      quantity: z.number().int().positive().max(1000000),
+    })
+    .strict(),
+  z.object({ operation: z.literal('EMERGENCY') }).strict(),
+]);

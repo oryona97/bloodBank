@@ -23,9 +23,18 @@ Completed items use `[x]`. Items remain unchecked until implemented and verified
 - [x] Stage 8: Verify the browser workflows and write setup and demo instructions.
 - [x] Stage 9: Commit and push the working application and updated checklist.
 
-**Status:** All baseline implementation stages are complete. The application is pushed to `main`, all 90 automated tests pass, and GitHub CI is green. The next step is to try the local app using the README demo walkthrough. Implementation follows the mixed-type, all-or-nothing allocation policy below.
+**Status:** The baseline implementation is complete. The current audit/export extension adds complete API activity logging, explicit cancellation logging, append-only audit protection, and consistent JSON copies of all application tables. Local PostgreSQL verification passes all 25 integration tests, including the 16 baseline cases. These changes have not been published or verified by a new GitHub CI run. Implementation follows the mixed-type, all-or-nothing allocation policy below.
 
-### Verification record
+### Audit/export verification (2026-10-03)
+
+- [x] 74 domain tests and 25 PostgreSQL integration tests pass (99 total).
+- [x] TypeScript checks, production build, formatting, and diff whitespace checks pass.
+- [x] Apply the additive migration to the local database without deleting existing records.
+- [x] Browser routine preview and cancellation complete without changing inventory.
+- [x] Browser emergency cancellation completes without issuing O-negative stock.
+- [x] Export Records downloads JSON containing both cancellations and the export event; available inventory remains at 28 units.
+
+### Baseline verification record (historical)
 
 - [x] 74 domain tests, including all 64 donor/recipient combinations.
 - [x] 16 integration tests against a separate PostgreSQL database.

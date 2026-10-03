@@ -8,12 +8,17 @@ try {
     for (let n = 0; n < counts[index]!; n++) {
       // Fixed keys make seeding repeatable without refilling previously issued units.
       const key = `00000000-0000-4000-8000-${String(index * 100 + n).padStart(12, '0')}`;
-      await registerDonation(pool, key, {
-        bloodType,
-        donationDate: '2026-01-15',
-        donorId: String(900000000 + index * 100 + n),
-        donorFullName: `Demo Donor ${index + 1}-${n + 1}`,
-      });
+      await registerDonation(
+        pool,
+        key,
+        {
+          bloodType,
+          donationDate: '2026-01-15',
+          donorId: String(900000000 + index * 100 + n),
+          donorFullName: `Demo Donor ${index + 1}-${n + 1}`,
+        },
+        { actor: 'seed', source: 'seed', requestKey: key },
+      );
     }
   }
   console.log('Synthetic demo seed applied (41 units on first run).');

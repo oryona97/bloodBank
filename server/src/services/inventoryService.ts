@@ -9,6 +9,7 @@ import type {
 import { planAllocation } from '../domain/allocation.js';
 import { AppError } from '../errors.js';
 import { getInventory } from '../storage/inventoryRepository.js';
+import { writeAudit, type AuditContext } from '../storage/auditRepository.js';
 
 export async function mutate<T>(
   pool: Pool,
@@ -16,6 +17,7 @@ export async function mutate<T>(
   operation: string,
   payload: unknown,
   action: (client: PoolClient) => Promise<T>,
+  context?: AuditContext,
 ): Promise<T> {
   const fingerprint = createHash('sha256')
     .update(JSON.stringify({ operation, payload }))
@@ -37,6 +39,12 @@ export async function mutate<T>(
           'REQUEST_KEY_REUSED',
           'This request key was already used for a different operation.',
         );
+      await writeAudit(
+        client,
+        'REQUEST_REPLAYED',
+        { operation, response: previous.rows[0].response },
+        context,
+      );
       await client.query('COMMIT');
       return previous.rows[0].response as T;
     }
@@ -55,19 +63,28 @@ export async function mutate<T>(
   }
 }
 
-export function registerDonation(pool: Pool, key: string, input: DonationInput) {
-  return mutate(pool, key, 'donation', input, async (client) => {
-    const unitId = randomUUID();
-    await client.query(
-      'INSERT INTO blood_units(unit_id, blood_type, donation_date, donor_id, donor_full_name) VALUES ($1, $2, $3, $4, $5)',
-      [unitId, input.bloodType, input.donationDate, input.donorId, input.donorFullName],
-    );
-    await client.query(
-      'INSERT INTO audit_logs(action, details) VALUES ($1, $2::jsonb)',
-      ['DONATION', JSON.stringify(input)],
-    );
-    return { unitId, bloodType: input.bloodType };
-  });
+export function registerDonation(
+  pool: Pool,
+  key: string,
+  input: DonationInput,
+  context?: AuditContext,
+) {
+  return mutate(
+    pool,
+    key,
+    'donation',
+    input,
+    async (client) => {
+      const unitId = randomUUID();
+      await client.query(
+        'INSERT INTO blood_units(unit_id, blood_type, donation_date, donor_id, donor_full_name) VALUES ($1, $2, $3, $4, $5)',
+        [unitId, input.bloodType, input.donationDate, input.donorId, input.donorFullName],
+      );
+      await writeAudit(client, 'DONATION', { ...input, unitId }, context);
+      return { unitId, bloodType: input.bloodType };
+    },
+    context,
+  );
 }
 
 async function issue(
@@ -76,8 +93,10 @@ async function issue(
   recipientType: BloodType | null,
   quantity: number | null,
   lines: AllocationLine[],
+  context?: AuditContext,
 ): Promise<DispenseReceipt> {
   const eventId = randomUUID();
+  const unitIds: string[] = [];
   await client.query(
     'INSERT INTO dispense_events(event_id, mode, recipient_blood_type, requested_quantity) VALUES ($1, $2, $3, $4)',
     [eventId, mode, recipientType, quantity],
@@ -90,6 +109,7 @@ async function issue(
     if (units.rows.length !== line.quantity)
       throw new AppError(409, 'STOCK_CHANGED', 'Stock changed. Request a new allocation.');
     const ids = units.rows.map((row) => row.unit_id);
+    unitIds.push(...ids);
     await client.query(
       "UPDATE blood_units SET status = 'DISPENSED' WHERE unit_id = ANY($1::uuid[])",
       [ids],
@@ -99,11 +119,13 @@ async function issue(
       [eventId, ids],
     );
   }
-  const receipt = { eventId, mode, quantity: lines.reduce((sum, line) => sum + line.quantity, 0), lines };
-  await client.query(
-    'INSERT INTO audit_logs(action, details) VALUES ($1, $2::jsonb)',
-    [`DISPENSE_${mode}`, JSON.stringify(receipt)],
-  );
+  const receipt = {
+    eventId,
+    mode,
+    quantity: lines.reduce((sum, line) => sum + line.quantity, 0),
+    lines,
+  };
+  await writeAudit(client, `DISPENSE_${mode}`, { ...receipt, recipientType, unitIds }, context);
   return receipt;
 }
 
@@ -111,29 +133,44 @@ export function confirmDispensing(
   pool: Pool,
   key: string,
   input: { recipientType: BloodType; quantity: number; lines: AllocationLine[] },
+  context?: AuditContext,
 ) {
-  return mutate(pool, key, 'routine', input, async (client) => {
-    const plan = planAllocation(input.recipientType, input.quantity, await getInventory(client));
-    if (!plan.canFulfill || JSON.stringify(plan.lines) !== JSON.stringify(input.lines)) {
-      throw new AppError(
-        409,
-        'STOCK_CHANGED',
-        'The allocation has changed. Preview the request again before dispensing.',
-      );
-    }
-    return issue(client, 'ROUTINE', input.recipientType, input.quantity, plan.lines);
-  });
+  return mutate(
+    pool,
+    key,
+    'routine',
+    input,
+    async (client) => {
+      const plan = planAllocation(input.recipientType, input.quantity, await getInventory(client));
+      if (!plan.canFulfill || JSON.stringify(plan.lines) !== JSON.stringify(input.lines)) {
+        throw new AppError(
+          409,
+          'STOCK_CHANGED',
+          'The allocation has changed. Preview the request again before dispensing.',
+        );
+      }
+      return issue(client, 'ROUTINE', input.recipientType, input.quantity, plan.lines, context);
+    },
+    context,
+  );
 }
 
-export function emergencyDispensing(pool: Pool, key: string) {
-  return mutate(pool, key, 'emergency', {}, async (client) => {
-    const quantity = (await getInventory(client))['O-'];
-    if (!quantity)
-      throw new AppError(
-        409,
-        'EMPTY_EMERGENCY_STOCK',
-        'No O-negative units are available for emergency dispensing.',
-      );
-    return issue(client, 'EMERGENCY', null, null, [{ bloodType: 'O-', quantity }]);
-  });
+export function emergencyDispensing(pool: Pool, key: string, context?: AuditContext) {
+  return mutate(
+    pool,
+    key,
+    'emergency',
+    {},
+    async (client) => {
+      const quantity = (await getInventory(client))['O-'];
+      if (!quantity)
+        throw new AppError(
+          409,
+          'EMPTY_EMERGENCY_STOCK',
+          'No O-negative units are available for emergency dispensing.',
+        );
+      return issue(client, 'EMERGENCY', null, null, [{ bloodType: 'O-', quantity }], context);
+    },
+    context,
+  );
 }
