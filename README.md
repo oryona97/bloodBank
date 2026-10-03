@@ -4,7 +4,7 @@ BECS student assignment for donation intake, routine blood dispensing, and emerg
 
 ## Status
 
-Donation intake, routine allocation and confirmation, emergency O-negative release, live inventory, and recent activity are implemented. PostgreSQL also stores an append-only audit trail. **Audit & records** provides a searchable record dashboard with selective exports and complete database copies as readable JSON.
+Donation intake, routine allocation and confirmation, emergency O-negative release, live inventory, and recent activity are implemented. PostgreSQL also stores an append-only audit trail. **Audit & records** provides a searchable record dashboard with selective exports and complete database copies as readable JSON. The system features **Role-Based Access Control (RBAC)** with JWT authentication, ensuring HIPAA compliance by scrubbing Protected Health Information (PHI) for restricted roles, and includes an Admin-exclusive **User Management** dashboard.
 
 See [PLAN.md](PLAN.md) for the development checklist (`[x]` means completed), requirements, allocation rules, architecture, and verification results.
 
@@ -44,6 +44,19 @@ docker compose exec app node dist/server/server/scripts/seed.js
 The seed is repeatable without duplicating donations or replenishing dispensed units. To change the browser port, set `APP_PORT` in `.env` (default `3001`). Compose uses `POSTGRES_PASSWORD` for both services; set it before initializing a new database volume. Changing it later does not change the existing database role's password. The host-side `DATABASE_URL`, `HOST`, and `PORT` settings are for local development and are not passed to the app container.
 
 If switching from `npm start` or `npm run dev`, stop the local API first so port 3001 is available. Conversely, run `docker compose stop app` before starting the local API. The app container serves both the frontend and `/api` routes; port 5188 is only used by Vite during local development.
+
+## Authentication & Roles
+
+The system uses JWT-based authentication. On initial startup, the database migration automatically seeds three default users representing the different system roles:
+
+- **Username:** `admin` / **Password:** `admin`
+  - **Role: Admin** - Full access, including Audit Logs, User Management dashboard, and all inventory actions.
+- **Username:** `worker` / **Password:** `worker`
+  - **Role: Worker** - Can manage inventory (Deposit/Withdraw). No access to Audit Logs or User Management.
+- **Username:** `researcher` / **Password:** `researcher`
+  - **Role: Researcher** - Read-only access to aggregated inventory and PHI-scrubbed records (HIPAA compliant). No access to Audit Logs.
+
+_Note: The default admin credentials can be overridden by setting `ADMIN_USERNAME` and `ADMIN_PASSWORD` in your environment._
 
 ## Develop locally
 
@@ -140,7 +153,7 @@ The audit trail records donation registration, routine and emergency dispensing,
 
 Each new entry includes a database timestamp, sequence number, action, outcome, source, actor, and details. API entries also have a server-generated request ID (returned in `X-Request-Id`), HTTP method/path, and the supplied idempotency key when present. Donation entries identify the created unit; dispensing entries identify the event and every issued unit. Retries create `REQUEST_REPLAYED` entries without repeating the stock change. The UI waits for cancellation to be recorded before dismissing its confirmation.
 
-This application has no user login: API actors are honestly recorded as `anonymous`; seed and internal operations identify their system source. This does not establish the identity of a human operator. Browser-only interactions such as typing or changing tabs are not business records. Database triggers reject audit `UPDATE`, `DELETE`, and `TRUNCATE`; a database owner/administrator can still change the schema or disable triggers. If PostgreSQL is unavailable, the API returns 503 and writes the audit failure to server diagnostics; it cannot persist a database audit entry during that outage.
+API actions are authenticated via JWT, tracking the exact actor and their role for every operation. Seed and internal operations identify their system source. Browser-only interactions such as typing or changing tabs are not business records. Database triggers reject audit `UPDATE`, `DELETE`, and `TRUNCATE`; a database owner/administrator can still change the schema or disable triggers. If PostgreSQL is unavailable, the API returns 503 and writes the audit failure to server diagnostics; it cannot persist a database audit entry during that outage.
 
 The JSON download contains `bloodUnits` (available and dispensed), `dispenseEvents`, `dispenseEventUnits`, `operationRequests`, all `auditLogs`, all eight inventory counts, and the application tables `schemaMigrations` and `inventoryLock`. Donor IDs remain strings, and donation dates remain `YYYY-MM-DD`. Logs are ordered by timestamp and then sequence. `formatVersion` identifies the export structure; `exportedAt` is the transaction start time.
 
@@ -157,9 +170,12 @@ All export reads share one PostgreSQL `REPEATABLE READ` transaction, so concurre
 
 ## API
 
+Except for `/api/health` and `/api/auth/login`, all endpoints require a valid JWT in the `Authorization: Bearer <token>` header.
+
 | Method | Route                       | Purpose                                                 |
 | ------ | --------------------------- | ------------------------------------------------------- |
 | GET    | `/api/health`               | Check database/schema connectivity                      |
+| POST   | `/api/auth/login`           | Authenticate and receive a JWT                          |
 | GET    | `/api/inventory`            | Available counts and the latest eight activities        |
 | POST   | `/api/donations`            | Register one unit                                       |
 | POST   | `/api/dispensing/preview`   | Preview an allocation without changing stock            |
@@ -169,6 +185,8 @@ All export reads share one PostgreSQL `REPEATABLE READ` transaction, so concurre
 | GET    | `/api/export`               | Download all application records and audit logs as JSON |
 | GET    | `/api/records`              | Filter and page through one record collection           |
 | POST   | `/api/records/export`       | Export matching records or an explicit selection        |
+| GET    | `/api/users`                | List all users (Admin only)                             |
+| POST   | `/api/users`                | Create a new user (Admin only)                          |
 
 Runtime input validation is enforced on the API. Donation and dispensing writes require an `Idempotency-Key` UUID. Cancellation takes `{ "operation": "EMERGENCY" }` or `{ "operation": "ROUTINE", "recipientType": "A+", "quantity": 1 }`. Invalid input returns HTTP 400; oversized bodies return 413; stale allocations and empty emergency stock return 409. Database or audit unavailability returns 503.
 
