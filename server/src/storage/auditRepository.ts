@@ -3,6 +3,8 @@ import type { Pool, PoolClient } from 'pg';
 export type AuditContext = {
   actor: string;
   source: 'api' | 'seed' | 'system';
+  userId?: string;
+  role?: string;
   requestId?: string;
   requestKey?: string;
   method?: string;

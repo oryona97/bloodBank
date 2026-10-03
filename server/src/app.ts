@@ -23,6 +23,7 @@ import {
 } from './services/inventoryService.js';
 import { planAllocation } from './domain/allocation.js';
 import { AppError } from './errors.js';
+import { login, requireAuth } from './auth.js';
 
 const auditContext = (res: Response) => res.locals.audit as AuditContext;
 
@@ -49,6 +50,10 @@ export function createApp(pool: Pool) {
     await writeAudit(pool, 'HEALTH_CHECKED', {}, auditContext(res));
     res.json({ status: 'ok' });
   });
+  app.post('/api/auth/login', (req, res, next) => {
+    login(pool, req, res).catch(next);
+  });
+  app.use('/api', requireAuth);
   app.get('/api/inventory', async (_req, res) => {
     const [inventory, activity] = await Promise.all([getInventory(pool), getActivity(pool)]);
     await writeAudit(pool, 'INVENTORY_VIEWED', { inventory }, auditContext(res));

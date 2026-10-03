@@ -6,7 +6,7 @@ import { writeAudit, type AuditContext } from './auditRepository.js';
 // Only these fixed identifiers can enter SQL. All user-provided values are parameters.
 const datasets: Record<
   RecordDataset,
-  { from: string; select: string; date: string; id: string; order: string }
+  { from: string; select: string; date: string; id: string; order: string; deidentifiedFrom?: string }
 > = {
   auditLogs: {
     from: 'audit_logs r',
@@ -17,6 +17,7 @@ const datasets: Record<
   },
   bloodUnits: {
     from: 'blood_units r',
+    deidentifiedFrom: 'deidentified_blood_units r',
     select: 'r.*, r.donation_date::text AS donation_date',
     date: 'r.created_at',
     id: 'r.unit_id',
@@ -45,8 +46,17 @@ const datasets: Record<
   },
 };
 
-function selection(filters: RecordFilters, ids?: string[]) {
+function selection(filters: RecordFilters, context: AuditContext, ids?: string[]) {
   const config = datasets[filters.dataset];
+  if (context.role === 'RESEARCHER' && filters.dataset === 'auditLogs') {
+    throw new AppError(403, 'FORBIDDEN', 'Researchers are not allowed to view audit logs.');
+  }
+  let fromTable = config.from;
+  
+  if (context.role === 'RESEARCHER' && config.deidentifiedFrom) {
+    fromTable = config.deidentifiedFrom;
+  }
+  
   const values: unknown[] = [];
   const clauses: string[] = [];
   const param = (value: unknown) => {
@@ -69,7 +79,7 @@ function selection(filters: RecordFilters, ids?: string[]) {
   if (filters.action) clauses.push(`r.action = ${param(filters.action)}`);
   if (filters.outcome) clauses.push(`r.outcome = ${param(filters.outcome)}`);
   if (ids) clauses.push(`${config.id} = ANY(${param(ids)}::uuid[])`);
-  return { ...config, where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', values };
+  return { ...config, from: fromTable, where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', values };
 }
 
 async function timestamp(client: PoolClient): Promise<string> {
@@ -90,7 +100,7 @@ export async function getRecords(
   try {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     const snapshotAt = filters.snapshotAt ?? (await timestamp(client));
-    const query = selection({ ...filters, snapshotAt });
+    const query = selection({ ...filters, snapshotAt }, context);
     const total = await client.query(
       `SELECT count(*)::int AS total FROM ${query.from} ${query.where}`,
       query.values,
@@ -139,7 +149,7 @@ export async function exportRecords(
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     const exportedAt = await timestamp(client);
     const effectiveFilters = { ...filters, snapshotAt: filters.snapshotAt ?? exportedAt };
-    const query = selection(effectiveFilters, ids);
+    const query = selection(effectiveFilters, context, ids);
     const result = await client.query<StoredRecord>(
       `SELECT ${query.select} FROM ${query.from} ${query.where} ORDER BY ${query.order}`,
       query.values,

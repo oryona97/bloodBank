@@ -8,11 +8,13 @@ export class ApiError extends Error {
   }
 }
 export async function api<T>(path: string, body?: unknown, key?: string): Promise<T> {
+  const token = localStorage.getItem('token');
   const response = await fetch(`/api${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: {
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(key ? { 'Idempotency-Key': key } : {}),
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

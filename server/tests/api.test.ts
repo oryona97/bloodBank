@@ -37,12 +37,15 @@ const donation = (bloodType: BloodType = 'A+') => ({
   donorId: '000000018',
   donorFullName: 'Synthetic Test Donor',
 });
+let token = '';
+
 function add(type: BloodType = 'A+', key = randomUUID()) {
-  return request(app).post('/api/donations').set('Idempotency-Key', key).send(donation(type));
+  return request(app).post('/api/donations').set('Idempotency-Key', key).set('Authorization', `Bearer ${token}`).send(donation(type));
 }
 async function preview(recipientType: BloodType, quantity: number): Promise<Allocation> {
   const response = await request(app)
     .post('/api/dispensing/preview')
+    .set('Authorization', `Bearer ${token}`)
     .send({ recipientType, quantity });
   expect(response.status).toBe(200);
   return response.body as Allocation;
@@ -51,13 +54,14 @@ function confirm(plan: Allocation, key = randomUUID()) {
   return request(app)
     .post('/api/dispensing/confirm')
     .set('Idempotency-Key', key)
+    .set('Authorization', `Bearer ${token}`)
     .send({ recipientType: plan.recipientType, quantity: plan.quantity, lines: plan.lines });
 }
 function emergency(key = randomUUID()) {
-  return request(app).post('/api/dispensing/emergency').set('Idempotency-Key', key).send({});
+  return request(app).post('/api/dispensing/emergency').set('Idempotency-Key', key).set('Authorization', `Bearer ${token}`).send({});
 }
 async function inventory() {
-  return (await request(app).get('/api/inventory')).body.inventory;
+  return (await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`)).body.inventory;
 }
 
 async function auditFor(response: { headers: Record<string, string> }) {
@@ -71,6 +75,9 @@ async function auditFor(response: { headers: Record<string, string> }) {
 beforeAll(async () => {
   await adminPool.query(`CREATE SCHEMA ${schema}`);
   await migrate(pool);
+  await pool.query(`INSERT INTO users (id, username, password_hash, role) VALUES ($1, 'admin1', 'hashed_pw', 'ADMIN')`, [randomUUID()]);
+  const loginRes = await request(app).post('/api/auth/login').send({ username: 'admin1', password: 'password123' });
+  token = loginRes.body.token;
 });
 beforeEach(async () => {
   await pool.query(
@@ -109,6 +116,7 @@ describe('PostgreSQL-backed API', () => {
     ]) {
       const response = await request(app)
         .post('/api/donations')
+        .set('Authorization', `Bearer ${token}`)
         .set('Idempotency-Key', randomUUID())
         .send({ ...donation(), ...change });
       expect(response.status).toBe(400);
@@ -119,17 +127,18 @@ describe('PostgreSQL-backed API', () => {
   it('rejects invalid quantities and missing request keys', async () => {
     for (const quantity of [0, -1, 1.2, '2']) {
       expect(
-        (await request(app).post('/api/dispensing/preview').send({ recipientType: 'A+', quantity }))
+        (await request(app).post('/api/dispensing/preview').set('Authorization', `Bearer ${token}`).send({ recipientType: 'A+', quantity }))
           .status,
       ).toBe(400);
     }
-    expect((await request(app).post('/api/donations').send(donation())).status).toBe(400);
+    expect((await request(app).post('/api/donations').set('Authorization', `Bearer ${token}`).send(donation())).status).toBe(400);
   });
   it('does not mutate stock on preview and uses oldest donation first', async () => {
     const first = await add();
     await request(app)
       .post('/api/donations')
       .set('Idempotency-Key', randomUUID())
+      .set('Authorization', `Bearer ${token}`)
       .send({ ...donation(), donationDate: '2025-01-01' });
     const plan = await preview('A+', 1);
     expect((await inventory())['A+']).toBe(2);
@@ -252,7 +261,7 @@ describe('PostgreSQL-backed API', () => {
     await add('B-');
     const freshPool = new Pool(poolOptions);
     try {
-      expect((await request(createApp(freshPool)).get('/api/inventory')).body.inventory['B-']).toBe(
+      expect((await request(createApp(freshPool)).get('/api/inventory').set('Authorization', `Bearer ${token}`)).body.inventory['B-']).toBe(
         1,
       );
     } finally {
@@ -270,7 +279,7 @@ describe('Audit trail and record copies', () => {
       {
         action: 'DONATION',
         outcome: 'SUCCESS',
-        actor: 'anonymous',
+        actor: 'admin1',
         source: 'api',
         request_key: key,
         context: { method: 'POST', path: '/api/donations' },
@@ -312,12 +321,13 @@ describe('Audit trail and record copies', () => {
 
   it('records reads, health checks, shortages, and cancellations without issuing stock', async () => {
     const unit = await add();
-    const viewed = await request(app).get('/api/inventory');
+    const viewed = await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`);
     expect(await auditFor(viewed)).toMatchObject([{ action: 'INVENTORY_VIEWED' }]);
     const health = await request(app).get('/api/health');
     expect(await auditFor(health)).toMatchObject([{ action: 'HEALTH_CHECKED' }]);
     const planned = await request(app)
       .post('/api/dispensing/preview')
+      .set('Authorization', `Bearer ${token}`)
       .send({ recipientType: 'A+', quantity: 2 });
     expect(await auditFor(planned)).toMatchObject([
       { action: 'ALLOCATION_PREVIEWED', details: { canFulfill: false, shortfall: 1 } },
@@ -326,7 +336,7 @@ describe('Audit trail and record copies', () => {
       { operation: 'ROUTINE', recipientType: 'A+', quantity: 2 },
       { operation: 'EMERGENCY' },
     ]) {
-      const cancelled = await request(app).post('/api/activities/cancel').send(body);
+      const cancelled = await request(app).post('/api/activities/cancel').set('Authorization', `Bearer ${token}`).send(body);
       expect(cancelled.status).toBe(200);
       expect(await auditFor(cancelled)).toMatchObject([
         { action: 'DISPENSING_CANCELLED', details: body },
@@ -345,23 +355,25 @@ describe('Audit trail and record copies', () => {
     expect(await auditFor(empty)).toMatchObject([
       { outcome: 'REJECTED', details: { code: 'EMPTY_EMERGENCY_STOCK', status: 409 } },
     ]);
-    const invalid = await request(app).post('/api/donations').send({ donorId: 'bad' });
+    const invalid = await request(app).post('/api/donations').set('Authorization', `Bearer ${token}`).send({ donorId: 'bad' });
     expect(invalid.status).toBe(400);
     expect(await auditFor(invalid)).toMatchObject([
       { action: 'REQUEST_FAILED', details: { code: 'VALIDATION_ERROR' } },
     ]);
     const malformed = await request(app)
       .post('/api/donations')
+      .set('Authorization', `Bearer ${token}`)
       .set('Content-Type', 'application/json')
       .send('{');
     expect(malformed.status).toBe(400);
     expect(await auditFor(malformed)).toMatchObject([{ details: { code: 'INVALID_JSON' } }]);
     const oversized = await request(app)
       .post('/api/donations')
+      .set('Authorization', `Bearer ${token}`)
       .send({ value: 'x'.repeat(17000) });
     expect(oversized.status).toBe(413);
     expect(await auditFor(oversized)).toMatchObject([{ details: { code: 'PAYLOAD_TOO_LARGE' } }]);
-    const missing = await request(app).get('/api/missing');
+    const missing = await request(app).get('/api/missing').set('Authorization', `Bearer ${token}`);
     expect(missing.status).toBe(404);
     expect(await auditFor(missing)).toMatchObject([{ details: { code: 'NOT_FOUND' } }]);
     const key = randomUUID();
@@ -430,7 +442,7 @@ describe('Audit trail and record copies', () => {
   it('downloads every stored record and log, including its own export event', async () => {
     for (let i = 0; i < 10; i++) await add('A+');
     await confirm(await preview('A+', 1));
-    const response = await request(app).get('/api/export');
+    const response = await request(app).get('/api/export').set('Authorization', `Bearer ${token}`);
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('application/json');
     expect(response.headers['content-disposition']).toBe(
@@ -447,7 +459,7 @@ describe('Audit trail and record copies', () => {
     expect(data.dispenseEvents).toHaveLength(1);
     expect(data.dispenseEventUnits).toHaveLength(1);
     expect(data.operationRequests).toHaveLength(11);
-    expect(data.schemaMigrations).toHaveLength(3);
+    expect(data.schemaMigrations).toHaveLength(4);
     expect(data.inventoryLock).toEqual([{ id: 1 }]);
     expect(data.inventory).toHaveLength(8);
     expect(
@@ -499,7 +511,7 @@ describe('Record dashboard and selective exports', () => {
     const marker = `${randomUUID()}_%`;
     await writeAudit(pool, 'DONATION', { marker });
     await writeAudit(pool, 'REQUEST_FAILED', { marker }, undefined, 'REJECTED');
-    const response = await request(app).get('/api/records').query({
+    const response = await request(app).get('/api/records').set('Authorization', `Bearer ${token}`).query({
       dataset: 'auditLogs',
       search: marker,
       action: 'REQUEST_FAILED',
@@ -516,6 +528,7 @@ describe('Record dashboard and selective exports', () => {
     ]);
     const noMatches = await request(app)
       .get('/api/records')
+      .set('Authorization', `Bearer ${token}`)
       .query({ dataset: 'auditLogs', search: "' OR true --", action: 'DONATION' });
     expect(noMatches.body.total).toBe(0);
   });
@@ -534,7 +547,7 @@ describe('Record dashboard and selective exports', () => {
         created,
       ]);
     }
-    const response = await request(app).get('/api/records').query({
+    const response = await request(app).get('/api/records').set('Authorization', `Bearer ${token}`).query({
       dataset: 'auditLogs',
       search: marker,
       action: 'DATE_TEST',
@@ -553,11 +566,12 @@ describe('Record dashboard and selective exports', () => {
     const marker = randomUUID();
     for (let i = 0; i < 5; i++) await writeAudit(pool, 'PAGE_TEST', { marker, i });
     const filters = { dataset: 'auditLogs', action: 'PAGE_TEST', search: marker, pageSize: 2 };
-    const first = await request(app).get('/api/records').query(filters);
+    const first = await request(app).get('/api/records').set('Authorization', `Bearer ${token}`).query(filters);
     expect(first.body.total).toBe(5);
     await writeAudit(pool, 'PAGE_TEST', { marker, i: 5 });
     const second = await request(app)
       .get('/api/records')
+      .set('Authorization', `Bearer ${token}`)
       .query({ ...filters, snapshotAt: first.body.snapshotAt, page: 2 });
     expect(second.body.total).toBe(5);
     expect(first.body.records.map((row: { details: { i: number } }) => row.details.i)).toEqual([
@@ -568,6 +582,7 @@ describe('Record dashboard and selective exports', () => {
     ]);
     const emptyPage = await request(app)
       .get('/api/records')
+      .set('Authorization', `Bearer ${token}`)
       .query({ ...filters, snapshotAt: first.body.snapshotAt, page: 4 });
     expect(emptyPage.body.total).toBe(5);
     expect(emptyPage.body.records).toEqual([]);
@@ -579,6 +594,7 @@ describe('Record dashboard and selective exports', () => {
     const third = await add();
     const response = await request(app)
       .post('/api/records/export')
+      .set('Authorization', `Bearer ${token}`)
       .send({ filters: { dataset: 'bloodUnits' }, ids: [first.body.unitId, third.body.unitId] });
     expect(response.status).toBe(200);
     expect(response.headers['content-disposition']).toContain('bloodbank_bloodUnits_selected.json');
@@ -600,6 +616,7 @@ describe('Record dashboard and selective exports', () => {
     ]);
     const missing = await request(app)
       .post('/api/records/export')
+      .set('Authorization', `Bearer ${token}`)
       .send({ filters: { dataset: 'bloodUnits' }, ids: [randomUUID()] });
     expect(missing.status).toBe(409);
     expect(missing.body.code).toBe('EXPORT_SELECTION_CHANGED');
@@ -610,12 +627,14 @@ describe('Record dashboard and selective exports', () => {
     await add('A+');
     const page = await request(app)
       .get('/api/records')
+      .set('Authorization', `Bearer ${token}`)
       .query({ dataset: 'bloodUnits', search: 'O+', pageSize: 2 });
     expect(page.body.records).toHaveLength(2);
     expect(page.body.total).toBe(4);
     await add('O+');
     const exported = await request(app)
       .post('/api/records/export')
+      .set('Authorization', `Bearer ${token}`)
       .send({ filters: { dataset: 'bloodUnits', search: 'O+', snapshotAt: page.body.snapshotAt } });
     expect(exported.status).toBe(200);
     expect(exported.body.scope).toBe('filtered');
@@ -623,7 +642,7 @@ describe('Record dashboard and selective exports', () => {
     expect(
       exported.body.records.every((row: { blood_type: string }) => row.blood_type === 'O+'),
     ).toBe(true);
-    const full = await request(app).get('/api/export');
+    const full = await request(app).get('/api/export').set('Authorization', `Bearer ${token}`);
     expect(full.text).toContain('\n  "formatVersion": 1,\n');
     expect(full.body.bloodUnits).toHaveLength(6);
   });
@@ -634,6 +653,7 @@ describe('Record dashboard and selective exports', () => {
     for (const dataset of ['dispenseEvents', 'dispenseEventUnits', 'operationRequests']) {
       const response = await request(app)
         .get('/api/records')
+        .set('Authorization', `Bearer ${token}`)
         .query({ dataset, search: issued.body.eventId });
       expect(response.status).toBe(200);
       expect(response.body.total).toBe(1);
@@ -641,6 +661,7 @@ describe('Record dashboard and selective exports', () => {
       const id = record.unit_id ?? record.event_id ?? record.request_key;
       const exported = await request(app)
         .post('/api/records/export')
+        .set('Authorization', `Bearer ${token}`)
         .send({ filters: { dataset }, ids: [id] });
       expect(exported.status).toBe(200);
       expect(exported.body.records).toEqual([record]);
@@ -663,6 +684,7 @@ describe('Record dashboard and selective exports', () => {
         (
           await request(app)
             .get('/api/records')
+            .set('Authorization', `Bearer ${token}`)
             .query({ dataset: 'auditLogs', ...change })
         ).status,
       ).toBe(400);
@@ -678,6 +700,7 @@ describe('Record dashboard and selective exports', () => {
         (
           await request(app)
             .post('/api/records/export')
+            .set('Authorization', `Bearer ${token}`)
             .send({ filters: { dataset: 'auditLogs' }, ids })
         ).status,
       ).toBe(400);
