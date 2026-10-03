@@ -62,9 +62,9 @@ function recordSubtitle(record: StoredRecord, dataset: RecordDataset) {
   return 'Original response retained';
 }
 
-export function RecordsDashboard() {
+export function RecordsDashboard({ role }: { role: string }) {
   const [query, setQuery] = useState<RecordFilters & { page: number }>({
-    dataset: 'auditLogs',
+    dataset: role === 'RESEARCHER' ? 'bloodUnits' : 'auditLogs',
     page: 1,
   });
   const [draft, setDraft] = useState(emptyDraft);
@@ -153,13 +153,16 @@ export function RecordsDashboard() {
     setNotice('');
     try {
       const { page: _page, ...filters } = query;
+      const token = localStorage.getItem('token');
+      const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
       const response = await fetch(
         scope === 'full' ? '/api/export' : '/api/records/export',
         scope === 'full'
-          ? undefined
+          ? { headers: { ...authHeader } }
           : {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', ...authHeader },
               body: JSON.stringify({
                 filters: { ...filters, snapshotAt: data?.snapshotAt },
                 ...(scope === 'selected' ? { ids: [...selected] } : {}),
@@ -248,11 +251,13 @@ export function RecordsDashboard() {
                 changeQuery({ dataset: event.target.value as RecordDataset, page: 1 });
               }}
             >
-              {Object.entries(collections).map(([key, item]) => (
-                <option key={key} value={key}>
-                  {item.label}
-                </option>
-              ))}
+              {Object.entries(collections).map(([key, item]) =>
+                role === 'RESEARCHER' && key === 'auditLogs' ? null : (
+                  <option key={key} value={key}>
+                    {item.label}
+                  </option>
+                ),
+              )}
             </select>
           </label>
           <label className="record-search">

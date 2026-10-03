@@ -4,6 +4,13 @@ export const bloodTypeSchema = z.enum(BLOOD_TYPES);
 export const requestSchema = z
   .object({ recipientType: bloodTypeSchema, quantity: z.number().int().positive().max(1000000) })
   .strict();
+export const userSchema = z
+  .object({
+    username: z.string().trim().min(3).max(50),
+    password: z.string().min(6).max(100),
+    role: z.enum(['ADMIN', 'WORKER', 'RESEARCHER']),
+  })
+  .strict();
 export const confirmSchema = requestSchema
   .extend({
     lines: z

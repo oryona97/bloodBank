@@ -9,9 +9,16 @@ import {
 } from '../../shared/apiTypes.js';
 import { api, ApiError } from './api.js';
 import { RecordsDashboard } from './RecordsDashboard.js';
+import { Login } from './Login.js';
+import { UserManagement } from './UserManagement.js';
 
-type Screen = 'donation' | 'routine' | 'emergency' | 'records';
+type Screen = 'donation' | 'routine' | 'emergency' | 'records' | 'users';
 const titles: Record<Screen, { label: string; title: string; description: string }> = {
+  users: {
+    label: 'User management',
+    title: 'Access control.',
+    description: 'Manage who has access to the blood bank system.',
+  },
   records: {
     label: 'Audit & records',
     title: 'Every record. In view.',
@@ -132,6 +139,7 @@ function useAction() {
 }
 
 export function App() {
+  const [user, setUser] = useState<{ username: string; role: string } | null>(null);
   const [screen, setScreen] = useState<Screen>('donation');
   const [data, setData] = useState<InventoryResponse | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -151,13 +159,34 @@ export function App() {
     }
   }, []);
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (user) void refresh();
+  }, [refresh, user]);
   const completed = async (message: string) => {
     setNotice(message);
     await refresh();
   };
   const total = data ? Object.values(data.inventory).reduce((a, b) => a + b, 0) : null;
+
+  if (!user) {
+    return (
+      <Login
+        onLogin={(u) => {
+          setUser(u);
+          setScreen(u.role === 'RESEARCHER' ? 'records' : 'donation');
+        }}
+      />
+    );
+  }
+
+  const allowedScreens = (
+    ['donation', 'routine', 'emergency', 'records', 'users'] as Screen[]
+  ).filter((s) => {
+    if (user.role === 'ADMIN') return true;
+    if (user.role === 'WORKER') return s !== 'records' && s !== 'users';
+    if (user.role === 'RESEARCHER') return s === 'records';
+    return false;
+  });
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -180,7 +209,7 @@ export function App() {
           WORKSPACE <span>01</span>
         </div>
         <nav aria-label="Workspace">
-          {(['donation', 'routine', 'emergency', 'records'] as Screen[]).map((key, i) => (
+          {allowedScreens.map((key, i) => (
             <button
               key={key}
               className={`nav-item ${screen === key ? 'active' : ''}`}
@@ -205,9 +234,28 @@ export function App() {
           <p>Thoughtful allocation keeps vital blood available when it is needed most.</p>
         </div>
         <div className="sidebar-footer">
-          <span className="avatar">BB</span>
+          <span className="avatar" style={{ textTransform: 'uppercase' }}>
+            {user.username.slice(0, 2)}
+          </span>
           <div>
-            BECS project<small>Educational simulation</small>
+            {user.username} <small>{user.role}</small>
+            <a
+              href="#"
+              style={{
+                color: '#e74c3c',
+                textDecoration: 'none',
+                fontSize: '11px',
+                display: 'block',
+                marginTop: '2px',
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                localStorage.removeItem('token');
+                setUser(null);
+              }}
+            >
+              Sign Out
+            </a>
           </div>
         </div>
       </aside>
@@ -249,8 +297,9 @@ export function App() {
               {loadError}
             </div>
           )}
-          {screen === 'records' && <RecordsDashboard />}
-          <div hidden={screen === 'records'}>
+          {screen === 'records' && <RecordsDashboard role={user.role} />}
+          {screen === 'users' && <UserManagement />}
+          <div hidden={screen === 'records' || screen === 'users'}>
             <section className="inventory-section" aria-label="Current inventory">
               <div className="section-heading">
                 <h2>

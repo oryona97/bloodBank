@@ -2,14 +2,19 @@
 
 :root {
   font-family: 'DM Sans', sans-serif;
-  color: #253731;
-  background: #f5f6f2;
+  color: #f1f5f9;
+  background: radial-gradient(circle at top left, #2c3e50, #000000);
+  background-attachment: fixed;
   font-synthesis: none;
   font-weight: 400;
-  --green: #214c42;
-  --muted: #77817a;
-  --border: #e5e8e1;
-  --red: #ad4a42;
+  --green: #10b981;
+  --muted: #94a3b8;
+  --border: rgba(255, 255, 255, 0.1);
+  --red: #ef4444;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-blur: blur(20px);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
 }
 * {
   box-sizing: border-box;
@@ -55,8 +60,10 @@ button:not(:disabled):active {
 .sidebar {
   width: 252px;
   min-width: 252px;
-  background: #fff;
-  border-right: 1px solid var(--border);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: var(--glass-border);
   padding: 37px 22px 22px;
   display: flex;
   flex-direction: column;
@@ -68,7 +75,7 @@ button:not(:disabled):active {
   display: flex;
   gap: 10px;
   align-items: center;
-  color: #233c32;
+  color: #ffffff;
   text-decoration: none;
   font-family: Manrope, sans-serif;
   font-size: 24px;
@@ -112,7 +119,7 @@ button:not(:disabled):active {
   padding: 15px 12px;
   margin: 5px 0;
   border-radius: 8px;
-  color: #737f75;
+  color: #cbd5e0;
   font-size: 12px;
   font-weight: 550;
   gap: 10px;
@@ -123,11 +130,11 @@ button:not(:disabled):active {
   opacity: 0.7;
 }
 .nav-item.active {
-  color: #244d3e;
-  background: #eaf0e5;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
 }
 .nav-item:hover {
-  background: #f0f3ec;
+  background: rgba(255, 255, 255, 0.08);
 }
 .nav-arrow {
   margin-left: auto;
@@ -183,7 +190,9 @@ button:not(:disabled):active {
   place-items: center;
   border-radius: 50%;
   background: #eeeee6;
+  color: #435a48;
   font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.4px;
 }
 .sidebar-footer small {
@@ -199,22 +208,24 @@ main {
 }
 .topbar {
   height: 76px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 42px;
-  background: #fafbf8;
-  color: #859084;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: #cbd5e0;
   font-size: 11px;
 }
 .topbar strong {
   font-weight: 500;
-  color: #536452;
+  color: #ffffff;
 }
 .slash {
   padding: 0 13px;
-  color: #bac1b6;
+  color: #718096;
 }
 .connection {
   font-size: 10px;
@@ -318,10 +329,13 @@ h2 {
   gap: 10px;
 }
 .stock-card {
-  background: #fff;
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
   border-radius: 9px;
   padding: 14px 13px 13px;
+  box-shadow: var(--glass-shadow);
 }
 .stock-top {
   display: flex;
@@ -347,16 +361,16 @@ h2 {
   white-space: nowrap;
 }
 .stock-card.reserve {
-  background: #faf0e8;
-  border-color: #e8d7ca;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 .stock-card.reserve .stock-top,
 .stock-card.reserve .stock-top svg,
 .stock-card.reserve strong {
-  color: #a45f49;
+  color: #fca5a5;
 }
 .stock-card.reserve small {
-  color: #a5826e;
+  color: #f87171;
 }
 .work-grid {
   display: grid;
@@ -366,9 +380,12 @@ h2 {
   align-items: start;
 }
 .panel {
-  background: #fff;
-  border: 1px solid var(--border);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--glass-border);
   border-radius: 11px;
+  box-shadow: var(--glass-shadow);
 }
 .main-panel {
   overflow: hidden;

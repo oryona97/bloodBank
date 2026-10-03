@@ -10,7 +10,9 @@ import {
   cancellationSchema,
   recordsQuerySchema,
   recordsExportSchema,
+  userSchema,
 } from './validation.js';
+import bcrypt from 'bcrypt';
 import type { ApiErrorBody } from '../../shared/apiTypes.js';
 import { writeAudit, type AuditContext } from './storage/auditRepository.js';
 import { getInventory, getActivity } from './storage/inventoryRepository.js';
@@ -23,6 +25,7 @@ import {
 } from './services/inventoryService.js';
 import { planAllocation } from './domain/allocation.js';
 import { AppError } from './errors.js';
+import { login, requireAuth } from './auth.js';
 
 const auditContext = (res: Response) => res.locals.audit as AuditContext;
 
@@ -49,6 +52,10 @@ export function createApp(pool: Pool) {
     await writeAudit(pool, 'HEALTH_CHECKED', {}, auditContext(res));
     res.json({ status: 'ok' });
   });
+  app.post('/api/auth/login', (req, res, next) => {
+    login(pool, req, res).catch(next);
+  });
+  app.use('/api', requireAuth);
   app.get('/api/inventory', async (_req, res) => {
     const [inventory, activity] = await Promise.all([getInventory(pool), getActivity(pool)]);
     await writeAudit(pool, 'INVENTORY_VIEWED', { inventory }, auditContext(res));
@@ -117,6 +124,40 @@ export function createApp(pool: Pool) {
       `attachment; filename="bloodbank_${filters.dataset}_${data.scope}.json"`,
     );
     res.send(JSON.stringify(data, null, 2) + '\n');
+  });
+  app.get('/api/users', async (req, res) => {
+    if (auditContext(res).role !== 'ADMIN') {
+      throw new AppError(403, 'FORBIDDEN', 'Only admins can view users.');
+    }
+    const result = await pool.query(
+      'SELECT id, username, role, created_at FROM users ORDER BY created_at DESC',
+    );
+    res.json(result.rows);
+  });
+  app.post('/api/users', async (req, res) => {
+    if (auditContext(res).role !== 'ADMIN') {
+      throw new AppError(403, 'FORBIDDEN', 'Only admins can create users.');
+    }
+    const input = userSchema.parse(req.body);
+    const hash = await bcrypt.hash(input.password, 10);
+    try {
+      await pool.query(
+        'INSERT INTO users(id, username, password_hash, role) VALUES ($1, $2, $3, $4)',
+        [randomUUID(), input.username, hash, input.role],
+      );
+      await writeAudit(
+        pool,
+        'USER_CREATED',
+        { username: input.username, role: input.role },
+        auditContext(res),
+      );
+      res.status(201).json({ success: true });
+    } catch (err: any) {
+      if (err.code === '23505') {
+        throw new AppError(409, 'CONFLICT', 'Username already exists.');
+      }
+      throw err;
+    }
   });
   app.use('/api', () => {
     throw new AppError(404, 'NOT_FOUND', 'API endpoint not found.');
