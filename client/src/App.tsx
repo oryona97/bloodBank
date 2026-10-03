@@ -8,9 +8,15 @@ import {
   type InventoryResponse,
 } from '../../shared/apiTypes.js';
 import { api, ApiError } from './api.js';
+import { RecordsDashboard } from './RecordsDashboard.js';
 
-type Screen = 'donation' | 'routine' | 'emergency';
+type Screen = 'donation' | 'routine' | 'emergency' | 'records';
 const titles: Record<Screen, { label: string; title: string; description: string }> = {
+  records: {
+    label: 'Audit & records',
+    title: 'Every record. In view.',
+    description: 'Review the history, find what matters, and choose exactly what to export.',
+  },
   donation: {
     label: 'Donation intake',
     title: 'Every donation counts.',
@@ -174,7 +180,7 @@ export function App() {
           WORKSPACE <span>01</span>
         </div>
         <nav aria-label="Workspace">
-          {(Object.keys(titles) as Screen[]).map((key, i) => (
+          {(['donation', 'routine', 'emergency', 'records'] as Screen[]).map((key, i) => (
             <button
               key={key}
               className={`nav-item ${screen === key ? 'active' : ''}`}
@@ -243,113 +249,125 @@ export function App() {
               {loadError}
             </div>
           )}
-          <section className="inventory-section" aria-label="Current inventory">
-            <div className="section-heading">
-              <h2>
-                Available inventory{' '}
-                <span className="count-pill">{total === null ? '—' : total} units</span>
-              </h2>
-              <button className="text-button" onClick={() => void refresh()} disabled={refreshing}>
-                {refreshing ? 'Refreshing…' : '↻ Refresh stock'}
-              </button>
-            </div>
-            <div className="inventory-grid">
-              {BLOOD_TYPES.map((type) => (
-                <div className={`stock-card ${type === 'O-' ? 'reserve' : ''}`} key={type}>
-                  <div className="stock-top">
-                    <span>{type}</span>
-                    <Drop size={16} />
-                  </div>
-                  <strong>{data ? data.inventory[type] : '—'}</strong>
-                  <small>{type === 'O-' ? 'Emergency reserve' : 'units available'}</small>
+          {screen === 'records' && <RecordsDashboard />}
+          <div hidden={screen === 'records'}>
+            <section className="inventory-section" aria-label="Current inventory">
+              <div className="section-heading">
+                <h2>
+                  Available inventory{' '}
+                  <span className="count-pill">{total === null ? '—' : total} units</span>
+                </h2>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button className="text-button" onClick={() => setScreen('records')}>
+                    Audit & export records
+                  </button>
+                  <button
+                    className="text-button"
+                    onClick={() => void refresh()}
+                    disabled={refreshing}
+                  >
+                    {refreshing ? 'Refreshing…' : '↻ Refresh stock'}
+                  </button>
                 </div>
-              ))}
-            </div>
-          </section>
-          <div className="work-grid">
-            <section className="panel main-panel">
-              <div hidden={screen !== 'donation'}>
-                <DonationScreen disabled={!data || !!loadError} completed={completed} />
               </div>
-              <div hidden={screen !== 'routine'}>
-                <RoutineScreen disabled={!data || !!loadError} completed={completed} />
-              </div>
-              <div hidden={screen !== 'emergency'}>
-                <EmergencyScreen
-                  available={data?.inventory['O-'] ?? null}
-                  disabled={!data || !!loadError}
-                  completed={completed}
-                />
+              <div className="inventory-grid">
+                {BLOOD_TYPES.map((type) => (
+                  <div className={`stock-card ${type === 'O-' ? 'reserve' : ''}`} key={type}>
+                    <div className="stock-top">
+                      <span>{type}</span>
+                      <Drop size={16} />
+                    </div>
+                    <strong>{data ? data.inventory[type] : '—'}</strong>
+                    <small>{type === 'O-' ? 'Emergency reserve' : 'units available'}</small>
+                  </div>
+                ))}
               </div>
             </section>
-            <aside className="right-column">
-              <section className="policy-card">
-                <div className="eyebrow">ALLOCATION WITH PURPOSE</div>
-                <h2>
-                  Save the rare.
-                  <br />
-                  Support the need.
-                </h2>
-                <p>
-                  Exact matches come first. Compatible alternatives follow population frequency,
-                  with O− preserved whenever possible.
-                </p>
-                <div className="policy-rule">
-                  <span>01</span> Match the requested type
+            <div className="work-grid">
+              <section className="panel main-panel">
+                <div hidden={screen !== 'donation'}>
+                  <DonationScreen disabled={!data || !!loadError} completed={completed} />
                 </div>
-                <div className="policy-rule">
-                  <span>02</span> Choose compatible alternatives
+                <div hidden={screen !== 'routine'}>
+                  <RoutineScreen disabled={!data || !!loadError} completed={completed} />
                 </div>
-                <div className="policy-rule">
-                  <span>03</span> Keep O− available for emergencies
+                <div hidden={screen !== 'emergency'}>
+                  <EmergencyScreen
+                    available={data?.inventory['O-'] ?? null}
+                    disabled={!data || !!loadError}
+                    completed={completed}
+                  />
                 </div>
-                <div className="policy-footer">Based on the assignment’s compatibility model</div>
               </section>
-              <section className="panel activity-panel">
-                <div className="section-heading">
-                  <h2>Recent activity</h2>
-                  <span className="tiny-label">LATEST 8</span>
-                </div>
-                {data?.activity.length ? (
-                  <ul className="activity-list">
-                    {data.activity.map((item) => (
-                      <li key={item.id}>
-                        <span
-                          className={`activity-icon ${item.kind !== 'DONATION' ? 'issued' : ''}`}
-                        >
-                          {item.kind === 'DONATION' ? '+' : '↗'}
-                        </span>
-                        <div>
-                          <strong>
-                            {item.kind === 'DONATION'
-                              ? 'Donation received'
-                              : item.kind === 'EMERGENCY'
-                                ? 'Emergency release'
-                                : 'Routine dispensing'}
-                          </strong>
-                          <small>
-                            {item.bloodType ?? 'O-'} · {item.quantity}{' '}
-                            {item.quantity === 1 ? 'unit' : 'units'}
-                          </small>
-                        </div>
-                        <time dateTime={item.createdAt}>
-                          {new Intl.DateTimeFormat('en', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          }).format(new Date(item.createdAt))}
-                        </time>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty-state">
-                    {data
-                      ? 'Your first donation starts the story. Activity will appear here.'
-                      : 'Activity will appear when the database connects.'}
+              <aside className="right-column">
+                <section className="policy-card">
+                  <div className="eyebrow">ALLOCATION WITH PURPOSE</div>
+                  <h2>
+                    Save the rare.
+                    <br />
+                    Support the need.
+                  </h2>
+                  <p>
+                    Exact matches come first. Compatible alternatives follow population frequency,
+                    with O− preserved whenever possible.
                   </p>
-                )}
-              </section>
-            </aside>
+                  <div className="policy-rule">
+                    <span>01</span> Match the requested type
+                  </div>
+                  <div className="policy-rule">
+                    <span>02</span> Choose compatible alternatives
+                  </div>
+                  <div className="policy-rule">
+                    <span>03</span> Keep O− available for emergencies
+                  </div>
+                  <div className="policy-footer">Based on the assignment’s compatibility model</div>
+                </section>
+                <section className="panel activity-panel">
+                  <div className="section-heading">
+                    <h2>Recent activity</h2>
+                    <span className="tiny-label">LATEST 8</span>
+                  </div>
+                  {data?.activity.length ? (
+                    <ul className="activity-list">
+                      {data.activity.map((item) => (
+                        <li key={item.id}>
+                          <span
+                            className={`activity-icon ${item.kind !== 'DONATION' ? 'issued' : ''}`}
+                          >
+                            {item.kind === 'DONATION' ? '+' : '↗'}
+                          </span>
+                          <div>
+                            <strong>
+                              {item.kind === 'DONATION'
+                                ? 'Donation received'
+                                : item.kind === 'EMERGENCY'
+                                  ? 'Emergency release'
+                                  : 'Routine dispensing'}
+                            </strong>
+                            <small>
+                              {item.bloodType ?? 'O-'} · {item.quantity}{' '}
+                              {item.quantity === 1 ? 'unit' : 'units'}
+                            </small>
+                          </div>
+                          <time dateTime={item.createdAt}>
+                            {new Intl.DateTimeFormat('en', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }).format(new Date(item.createdAt))}
+                          </time>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="empty-state">
+                      {data
+                        ? 'Your first donation starts the story. Activity will appear here.'
+                        : 'Activity will appear when the database connects.'}
+                    </p>
+                  )}
+                </section>
+              </aside>
+            </div>
           </div>
           <footer className="page-footer">
             <span>BECS · Blood Establishment Computer Software</span>
@@ -558,7 +576,21 @@ function RoutineScreen({ disabled, completed }: ScreenProps) {
             </div>
           )}
           <div className="form-footer">
-            <button className="secondary-button" disabled={busy} onClick={() => setPlan(null)}>
+            <button
+              className="secondary-button"
+              disabled={busy}
+              onClick={() =>
+                void confirm.run(
+                  '/activities/cancel',
+                  {
+                    operation: 'ROUTINE',
+                    recipientType: plan.recipientType,
+                    quantity: plan.quantity,
+                  },
+                  () => setPlan(null),
+                )
+              }
+            >
               Cancel
             </button>
             {plan.canFulfill && (
@@ -662,7 +694,11 @@ function EmergencyScreen({
               <button
                 className="secondary-button"
                 disabled={action.busy}
-                onClick={() => setConfirming(false)}
+                onClick={() =>
+                  void action.run('/activities/cancel', { operation: 'EMERGENCY' }, () =>
+                    setConfirming(false),
+                  )
+                }
               >
                 Cancel
               </button>

@@ -1,0 +1,348 @@
+.records-dashboard {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.records-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.5fr;
+  gap: 16px;
+}
+.records-summary > div {
+  padding: 24px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.records-summary strong {
+  display: block;
+  font:
+    700 34px Manrope,
+    sans-serif;
+  margin: 12px 0 5px;
+}
+.records-summary strong span {
+  font-size: 15px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.records-summary small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.records-summary .records-protection {
+  background: #eaf0e8;
+}
+.records-protection strong {
+  font-size: 20px;
+  margin-top: 20px;
+}
+.records-panel {
+  overflow: hidden;
+  min-width: 0;
+}
+.records-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 26px;
+}
+.records-heading h2 {
+  margin: 0 0 7px;
+  font-size: 20px;
+}
+.records-heading p,
+.records-help {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+.record-filters {
+  padding: 0 26px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.record-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.record-filters .record-search {
+  grid-column: span 3;
+}
+.record-filters input,
+.record-filters select {
+  width: 100%;
+  min-width: 0;
+  height: 43px;
+  padding: 9px 12px;
+  border: 1px solid #dce1d8;
+  border-radius: 8px;
+  color: #253731;
+  background: #fafbf8;
+  font-size: 13px;
+}
+.record-filters input:focus-visible,
+.record-filters select:focus-visible {
+  outline: 2px solid #77a994;
+  outline-offset: 2px;
+}
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  grid-column: 1 / -1;
+}
+.records-dashboard .primary-button,
+.records-dashboard .secondary-button {
+  font-size: 12px;
+  padding: 11px 16px;
+  min-height: 40px;
+  white-space: nowrap;
+}
+.records-help {
+  padding: 14px 26px 22px;
+  font-size: 11px;
+}
+.export-toolbar {
+  padding: 20px 26px;
+  background: #f5f7f2;
+  border-block: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.export-toolbar > div:first-child {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.export-toolbar strong {
+  font-size: 14px;
+}
+.export-toolbar span {
+  color: var(--muted);
+  font-size: 11px;
+}
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.records-dashboard .text-button {
+  font-size: 12px;
+}
+.record-table-scroll {
+  position: relative;
+  overflow-x: auto;
+}
+.record-table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+}
+.record-table th {
+  background: #fafbf8;
+  padding: 15px;
+  color: #6e7d71;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.record-table td {
+  padding: 16px 15px;
+  border-top: 1px solid #edf0e9;
+  vertical-align: middle;
+}
+.record-table .checkbox-cell {
+  width: 50px;
+  padding-left: 26px;
+}
+.record-table input[type='checkbox'] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+.record-table strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.record-subtitle {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
+.record-table code {
+  font-size: 10px;
+  color: var(--muted);
+}
+.record-date {
+  font-size: 11px;
+  min-width: 125px;
+  line-height: 1.6;
+}
+.record-selected {
+  background: #f0f6ee;
+}
+.record-badge {
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  background: #eef0ec;
+  white-space: nowrap;
+}
+.record-badge.success,
+.record-badge.available {
+  color: #315d44;
+  background: #e9f1e5;
+}
+.record-badge.rejected {
+  color: #89621c;
+  background: #fbf0d8;
+}
+.record-badge.error {
+  color: #a43f3b;
+  background: #fbeae7;
+}
+.record-detail-row td {
+  background: #f7f9f5;
+}
+.record-detail-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+.record-detail-row pre {
+  font:
+    12px/1.8 Consolas,
+    monospace;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 450px;
+  overflow: auto;
+}
+.records-empty {
+  padding: 65px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.records-empty h3 {
+  color: #253731;
+  margin: 0 0 10px;
+}
+.records-message {
+  margin: 0;
+  padding: 15px 26px;
+  font-size: 13px;
+}
+.records-message.success {
+  background: #eaf3e6;
+  color: #315d44;
+}
+.records-panel > .error-box {
+  margin: 20px 26px;
+}
+.records-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 26px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+.records-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 1180px) {
+  .record-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .record-filters .record-search {
+    grid-column: auto;
+  }
+  .records-summary > div {
+    padding: 18px;
+  }
+}
+@media (max-width: 700px) {
+  .records-summary {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .records-summary .records-protection {
+    grid-column: 1 / -1;
+  }
+  .records-protection strong {
+    margin-top: 8px;
+  }
+  .records-heading {
+    flex-wrap: wrap;
+    padding: 20px;
+  }
+  .record-filters {
+    padding: 0 20px;
+  }
+  .records-help {
+    padding-inline: 20px;
+  }
+  .export-toolbar {
+    padding: 20px;
+  }
+  .export-actions {
+    gap: 10px;
+  }
+  .record-table {
+    min-width: 580px;
+  }
+  .records-pagination {
+    flex-wrap: wrap;
+    padding: 20px;
+  }
+  .records-pagination > div {
+    gap: 10px;
+  }
+}
+@media (max-width: 400px) {
+  .record-filters {
+    grid-template-columns: 1fr;
+  }
+}

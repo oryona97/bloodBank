@@ -31,6 +31,32 @@ export type Activity = {
 };
 export type InventoryResponse = { inventory: Inventory; activity: Activity[] };
 export type ApiErrorBody = { error: string; code: string; fields?: Record<string, string> };
+export const RECORD_DATASETS = [
+  'auditLogs',
+  'bloodUnits',
+  'dispenseEvents',
+  'dispenseEventUnits',
+  'operationRequests',
+] as const;
+export type RecordDataset = (typeof RECORD_DATASETS)[number];
+export type RecordFilters = {
+  dataset: RecordDataset;
+  search?: string;
+  from?: string;
+  to?: string;
+  action?: string;
+  outcome?: 'SUCCESS' | 'REJECTED' | 'ERROR';
+  snapshotAt?: string;
+};
+export type StoredRecord = Record<string, unknown>;
+export type RecordsResponse = {
+  records: StoredRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  snapshotAt: string;
+  actions: string[];
+};
 export function emptyInventory(): Inventory {
   return Object.fromEntries(BLOOD_TYPES.map((type) => [type, 0])) as Inventory;
 }
