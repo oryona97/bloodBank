@@ -207,6 +207,7 @@
   padding: 5px 8px;
   border-radius: 5px;
   font-size: 10px;
+  color: #4a5568;
   background: #eef0ec;
   white-space: nowrap;
 }
@@ -222,6 +223,18 @@
 .record-badge.error {
   color: #a43f3b;
   background: #fbeae7;
+}
+.record-badge.admin {
+  color: #274060;
+  background: #e2e8f0;
+}
+.record-badge.worker {
+  color: #315d44;
+  background: #e9f1e5;
+}
+.record-badge.researcher {
+  color: #5b3a6e;
+  background: #f0e6f6;
 }
 .record-detail-row td {
   background: rgba(0, 0, 0, 0.2);

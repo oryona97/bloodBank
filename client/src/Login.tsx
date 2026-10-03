@@ -16,7 +16,11 @@ function DropIcon() {
   );
 }
 
-export function Login({ onLogin }: { onLogin: (user: { username: string; role: string }) => void }) {
+export function Login({
+  onLogin,
+}: {
+  onLogin: (user: { username: string; role: string }) => void;
+}) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -30,7 +34,7 @@ export function Login({ onLogin }: { onLogin: (user: { username: string; role: s
     try {
       const result = await api<{ token: string; user: { username: string; role: string } }>(
         '/auth/login',
-        { username, password }
+        { username, password },
       );
       localStorage.setItem('token', result.token);
       onLogin(result.user);
@@ -49,10 +53,10 @@ export function Login({ onLogin }: { onLogin: (user: { username: string; role: s
           <h1>BloodBank Secure</h1>
           <p>Access Donation & Distribution System</p>
         </div>
-        
+
         <form className="login-form" onSubmit={handleSubmit}>
           {error && <div className="login-error">{error}</div>}
-          
+
           <div className="input-group">
             <label htmlFor="username">Username</label>
             <input
@@ -65,7 +69,7 @@ export function Login({ onLogin }: { onLogin: (user: { username: string; role: s
               disabled={loading}
             />
           </div>
-          
+
           <div className="input-group">
             <label htmlFor="password">Password</label>
             <input
@@ -78,15 +82,13 @@ export function Login({ onLogin }: { onLogin: (user: { username: string; role: s
               disabled={loading}
             />
           </div>
-          
+
           <button type="submit" className="login-button" disabled={loading}>
             {loading ? 'Authenticating...' : 'Sign In'}
           </button>
         </form>
-        
-        <div className="login-footer">
-          HIPAA & PART 11 COMPLIANT SYSTEM
-        </div>
+
+        <div className="login-footer">HIPAA & PART 11 COMPLIANT SYSTEM</div>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 - **Worker**: A staff member in the blood bank who has permissions to deposit and withdraw blood units. (Replaces the generic term "User" to avoid ambiguity).
 - **Researcher**: A research student who can query the system for data.
 - **Admin**: A system administrator who can manage accounts and view system metadata/logs.
-- **PHI (Protected Health Information)**: Information that can identify a patient/donor (e.g., `donor_id`, `donor_full_name`). 
+- **PHI (Protected Health Information)**: Information that can identify a patient/donor (e.g., `donor_id`, `donor_full_name`).
 - **De-identification**: The process of hiding PHI from unauthorized roles (like Researchers). In this system, it is implemented via **Database Layer Filtering** (the database itself omits or restricts access to these columns based on the user's role).
 - **Aggregated Statistics**: Summarized data that does not identify individuals (e.g. total units of A+ blood). Safe for Researchers to view under HIPAA.
 - **Audit Trail**: A chronological Part 11 log of who did what and when. Only Admins can view this.

@@ -19,7 +19,10 @@ export async function login(pool: Pool, req: Request, res: Response) {
     throw new AppError(400, 'BAD_REQUEST', 'Username and password are required');
   }
 
-  const result = await pool.query('SELECT id, username, password_hash, role FROM users WHERE username = $1', [username]);
+  const result = await pool.query(
+    'SELECT id, username, password_hash, role FROM users WHERE username = $1',
+    [username],
+  );
   const user = result.rows[0];
 
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
@@ -31,11 +34,9 @@ export async function login(pool: Pool, req: Request, res: Response) {
     }
   }
 
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '8h' }
-  );
+  const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, {
+    expiresIn: '8h',
+  });
 
   res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
 }

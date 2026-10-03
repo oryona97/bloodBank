@@ -14,7 +14,7 @@ export async function api<T>(path: string, body?: unknown, key?: string): Promis
     headers: {
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...(key ? { 'Idempotency-Key': key } : {}),
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });

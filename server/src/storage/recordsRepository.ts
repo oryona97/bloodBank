@@ -6,7 +6,14 @@ import { writeAudit, type AuditContext } from './auditRepository.js';
 // Only these fixed identifiers can enter SQL. All user-provided values are parameters.
 const datasets: Record<
   RecordDataset,
-  { from: string; select: string; date: string; id: string; order: string; deidentifiedFrom?: string }
+  {
+    from: string;
+    select: string;
+    date: string;
+    id: string;
+    order: string;
+    deidentifiedFrom?: string;
+  }
 > = {
   auditLogs: {
     from: 'audit_logs r',
@@ -52,11 +59,11 @@ function selection(filters: RecordFilters, context: AuditContext, ids?: string[]
     throw new AppError(403, 'FORBIDDEN', 'Researchers are not allowed to view audit logs.');
   }
   let fromTable = config.from;
-  
+
   if (context.role === 'RESEARCHER' && config.deidentifiedFrom) {
     fromTable = config.deidentifiedFrom;
   }
-  
+
   const values: unknown[] = [];
   const clauses: string[] = [];
   const param = (value: unknown) => {
@@ -79,7 +86,12 @@ function selection(filters: RecordFilters, context: AuditContext, ids?: string[]
   if (filters.action) clauses.push(`r.action = ${param(filters.action)}`);
   if (filters.outcome) clauses.push(`r.outcome = ${param(filters.outcome)}`);
   if (ids) clauses.push(`${config.id} = ANY(${param(ids)}::uuid[])`);
-  return { ...config, from: fromTable, where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '', values };
+  return {
+    ...config,
+    from: fromTable,
+    where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '',
+    values,
+  };
 }
 
 async function timestamp(client: PoolClient): Promise<string> {

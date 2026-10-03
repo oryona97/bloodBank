@@ -155,7 +155,7 @@ export function RecordsDashboard({ role }: { role: string }) {
       const { page: _page, ...filters } = query;
       const token = localStorage.getItem('token');
       const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      
+
       const response = await fetch(
         scope === 'full' ? '/api/export' : '/api/records/export',
         scope === 'full'
@@ -251,12 +251,13 @@ export function RecordsDashboard({ role }: { role: string }) {
                 changeQuery({ dataset: event.target.value as RecordDataset, page: 1 });
               }}
             >
-              {Object.entries(collections).map(([key, item]) => (
-                (role === 'RESEARCHER' && key === 'auditLogs') ? null :
-                <option key={key} value={key}>
-                  {item.label}
-                </option>
-              ))}
+              {Object.entries(collections).map(([key, item]) =>
+                role === 'RESEARCHER' && key === 'auditLogs' ? null : (
+                  <option key={key} value={key}>
+                    {item.label}
+                  </option>
+                ),
+              )}
             </select>
           </label>
           <label className="record-search">

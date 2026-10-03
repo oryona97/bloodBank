@@ -29,19 +29,24 @@ const app = createApp(pool);
 beforeAll(async () => {
   await adminPool.query(`CREATE SCHEMA ${schema}`);
   await migrate(pool);
-  
+
   // Seed users for testing
-  await pool.query(`
+  await pool.query(
+    `
     INSERT INTO users (id, username, password_hash, role)
     VALUES 
       ($1, 'admin1', 'hashed_pw', 'ADMIN'),
       ($2, 'worker1', 'hashed_pw', 'WORKER'),
       ($3, 'researcher1', 'hashed_pw', 'RESEARCHER')
-  `, [randomUUID(), randomUUID(), randomUUID()]);
+  `,
+    [randomUUID(), randomUUID(), randomUUID()],
+  );
 });
 
 beforeEach(async () => {
-  await pool.query('TRUNCATE operation_requests, dispense_event_units, dispense_events, blood_units');
+  await pool.query(
+    'TRUNCATE operation_requests, dispense_event_units, dispense_events, blood_units',
+  );
 });
 
 afterAll(async () => {
@@ -58,7 +63,7 @@ describe('Authentication and RBAC', () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({ username: 'admin1', password: 'password123' }); // assume a mock or bypass for test pw
-    
+
     // We expect a 200 and a token
     expect(response.status).toBe(200);
     expect(response.body.token).toBeDefined();
@@ -75,7 +80,7 @@ describe('Database Layer PHI De-identification for Researchers', () => {
     // 1. Insert a blood unit directly
     await pool.query(
       'INSERT INTO blood_units (unit_id, blood_type, donation_date, donor_id, donor_full_name) VALUES ($1, $2, $3, $4, $5)',
-      [randomUUID(), 'A+', '2026-01-01', '000000018', 'Synthetic Donor']
+      [randomUUID(), 'A+', '2026-01-01', '000000018', 'Synthetic Donor'],
     );
 
     // 2. Login as Researcher
@@ -92,10 +97,10 @@ describe('Database Layer PHI De-identification for Researchers', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.records).toHaveLength(1);
-    
+
     const record = response.body.records[0];
     expect(record.blood_type).toBe('A+');
-    
+
     // Crucial: PHI must be missing or redacted (null/undefined) due to DB view filtering
     expect(record.donor_id).toBeUndefined();
     expect(record.donor_full_name).toBeUndefined();

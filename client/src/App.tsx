@@ -10,9 +10,15 @@ import {
 import { api, ApiError } from './api.js';
 import { RecordsDashboard } from './RecordsDashboard.js';
 import { Login } from './Login.js';
+import { UserManagement } from './UserManagement.js';
 
-type Screen = 'donation' | 'routine' | 'emergency' | 'records';
+type Screen = 'donation' | 'routine' | 'emergency' | 'records' | 'users';
 const titles: Record<Screen, { label: string; title: string; description: string }> = {
+  users: {
+    label: 'User management',
+    title: 'Access control.',
+    description: 'Manage who has access to the blood bank system.',
+  },
   records: {
     label: 'Audit & records',
     title: 'Every record. In view.',
@@ -160,17 +166,23 @@ export function App() {
     await refresh();
   };
   const total = data ? Object.values(data.inventory).reduce((a, b) => a + b, 0) : null;
-  
+
   if (!user) {
-    return <Login onLogin={(u) => {
-      setUser(u);
-      setScreen(u.role === 'RESEARCHER' ? 'records' : 'donation');
-    }} />;
+    return (
+      <Login
+        onLogin={(u) => {
+          setUser(u);
+          setScreen(u.role === 'RESEARCHER' ? 'records' : 'donation');
+        }}
+      />
+    );
   }
 
-  const allowedScreens = (['donation', 'routine', 'emergency', 'records'] as Screen[]).filter(s => {
+  const allowedScreens = (
+    ['donation', 'routine', 'emergency', 'records', 'users'] as Screen[]
+  ).filter((s) => {
     if (user.role === 'ADMIN') return true;
-    if (user.role === 'WORKER') return s !== 'records';
+    if (user.role === 'WORKER') return s !== 'records' && s !== 'users';
     if (user.role === 'RESEARCHER') return s === 'records';
     return false;
   });
@@ -222,14 +234,28 @@ export function App() {
           <p>Thoughtful allocation keeps vital blood available when it is needed most.</p>
         </div>
         <div className="sidebar-footer">
-          <span className="avatar" style={{ textTransform: 'uppercase' }}>{user.username.slice(0, 2)}</span>
+          <span className="avatar" style={{ textTransform: 'uppercase' }}>
+            {user.username.slice(0, 2)}
+          </span>
           <div>
             {user.username} <small>{user.role}</small>
-            <a href="#" style={{ color: '#e74c3c', textDecoration: 'none', fontSize: '11px', display: 'block', marginTop: '2px' }} onClick={(e) => {
-              e.preventDefault();
-              localStorage.removeItem('token');
-              setUser(null);
-            }}>Sign Out</a>
+            <a
+              href="#"
+              style={{
+                color: '#e74c3c',
+                textDecoration: 'none',
+                fontSize: '11px',
+                display: 'block',
+                marginTop: '2px',
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                localStorage.removeItem('token');
+                setUser(null);
+              }}
+            >
+              Sign Out
+            </a>
           </div>
         </div>
       </aside>
@@ -272,7 +298,8 @@ export function App() {
             </div>
           )}
           {screen === 'records' && <RecordsDashboard role={user.role} />}
-          <div hidden={screen === 'records'}>
+          {screen === 'users' && <UserManagement />}
+          <div hidden={screen === 'records' || screen === 'users'}>
             <section className="inventory-section" aria-label="Current inventory">
               <div className="section-heading">
                 <h2>

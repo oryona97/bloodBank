@@ -40,7 +40,11 @@ const donation = (bloodType: BloodType = 'A+') => ({
 let token = '';
 
 function add(type: BloodType = 'A+', key = randomUUID()) {
-  return request(app).post('/api/donations').set('Idempotency-Key', key).set('Authorization', `Bearer ${token}`).send(donation(type));
+  return request(app)
+    .post('/api/donations')
+    .set('Idempotency-Key', key)
+    .set('Authorization', `Bearer ${token}`)
+    .send(donation(type));
 }
 async function preview(recipientType: BloodType, quantity: number): Promise<Allocation> {
   const response = await request(app)
@@ -58,10 +62,15 @@ function confirm(plan: Allocation, key = randomUUID()) {
     .send({ recipientType: plan.recipientType, quantity: plan.quantity, lines: plan.lines });
 }
 function emergency(key = randomUUID()) {
-  return request(app).post('/api/dispensing/emergency').set('Idempotency-Key', key).set('Authorization', `Bearer ${token}`).send({});
+  return request(app)
+    .post('/api/dispensing/emergency')
+    .set('Idempotency-Key', key)
+    .set('Authorization', `Bearer ${token}`)
+    .send({});
 }
 async function inventory() {
-  return (await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`)).body.inventory;
+  return (await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`)).body
+    .inventory;
 }
 
 async function auditFor(response: { headers: Record<string, string> }) {
@@ -75,8 +84,13 @@ async function auditFor(response: { headers: Record<string, string> }) {
 beforeAll(async () => {
   await adminPool.query(`CREATE SCHEMA ${schema}`);
   await migrate(pool);
-  await pool.query(`INSERT INTO users (id, username, password_hash, role) VALUES ($1, 'admin1', 'hashed_pw', 'ADMIN')`, [randomUUID()]);
-  const loginRes = await request(app).post('/api/auth/login').send({ username: 'admin1', password: 'password123' });
+  await pool.query(
+    `INSERT INTO users (id, username, password_hash, role) VALUES ($1, 'admin1', 'hashed_pw', 'ADMIN')`,
+    [randomUUID()],
+  );
+  const loginRes = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'admin1', password: 'password123' });
   token = loginRes.body.token;
 });
 beforeEach(async () => {
@@ -127,11 +141,22 @@ describe('PostgreSQL-backed API', () => {
   it('rejects invalid quantities and missing request keys', async () => {
     for (const quantity of [0, -1, 1.2, '2']) {
       expect(
-        (await request(app).post('/api/dispensing/preview').set('Authorization', `Bearer ${token}`).send({ recipientType: 'A+', quantity }))
-          .status,
+        (
+          await request(app)
+            .post('/api/dispensing/preview')
+            .set('Authorization', `Bearer ${token}`)
+            .send({ recipientType: 'A+', quantity })
+        ).status,
       ).toBe(400);
     }
-    expect((await request(app).post('/api/donations').set('Authorization', `Bearer ${token}`).send(donation())).status).toBe(400);
+    expect(
+      (
+        await request(app)
+          .post('/api/donations')
+          .set('Authorization', `Bearer ${token}`)
+          .send(donation())
+      ).status,
+    ).toBe(400);
   });
   it('does not mutate stock on preview and uses oldest donation first', async () => {
     const first = await add();
@@ -261,9 +286,13 @@ describe('PostgreSQL-backed API', () => {
     await add('B-');
     const freshPool = new Pool(poolOptions);
     try {
-      expect((await request(createApp(freshPool)).get('/api/inventory').set('Authorization', `Bearer ${token}`)).body.inventory['B-']).toBe(
-        1,
-      );
+      expect(
+        (
+          await request(createApp(freshPool))
+            .get('/api/inventory')
+            .set('Authorization', `Bearer ${token}`)
+        ).body.inventory['B-'],
+      ).toBe(1);
     } finally {
       await freshPool.end();
     }
@@ -336,7 +365,10 @@ describe('Audit trail and record copies', () => {
       { operation: 'ROUTINE', recipientType: 'A+', quantity: 2 },
       { operation: 'EMERGENCY' },
     ]) {
-      const cancelled = await request(app).post('/api/activities/cancel').set('Authorization', `Bearer ${token}`).send(body);
+      const cancelled = await request(app)
+        .post('/api/activities/cancel')
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
       expect(cancelled.status).toBe(200);
       expect(await auditFor(cancelled)).toMatchObject([
         { action: 'DISPENSING_CANCELLED', details: body },
@@ -355,7 +387,10 @@ describe('Audit trail and record copies', () => {
     expect(await auditFor(empty)).toMatchObject([
       { outcome: 'REJECTED', details: { code: 'EMPTY_EMERGENCY_STOCK', status: 409 } },
     ]);
-    const invalid = await request(app).post('/api/donations').set('Authorization', `Bearer ${token}`).send({ donorId: 'bad' });
+    const invalid = await request(app)
+      .post('/api/donations')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ donorId: 'bad' });
     expect(invalid.status).toBe(400);
     expect(await auditFor(invalid)).toMatchObject([
       { action: 'REQUEST_FAILED', details: { code: 'VALIDATION_ERROR' } },
@@ -511,12 +546,15 @@ describe('Record dashboard and selective exports', () => {
     const marker = `${randomUUID()}_%`;
     await writeAudit(pool, 'DONATION', { marker });
     await writeAudit(pool, 'REQUEST_FAILED', { marker }, undefined, 'REJECTED');
-    const response = await request(app).get('/api/records').set('Authorization', `Bearer ${token}`).query({
-      dataset: 'auditLogs',
-      search: marker,
-      action: 'REQUEST_FAILED',
-      outcome: 'REJECTED',
-    });
+    const response = await request(app)
+      .get('/api/records')
+      .set('Authorization', `Bearer ${token}`)
+      .query({
+        dataset: 'auditLogs',
+        search: marker,
+        action: 'REQUEST_FAILED',
+        outcome: 'REJECTED',
+      });
     expect(response.status).toBe(200);
     expect(response.body.total).toBe(1);
     expect(response.body.records).toMatchObject([
@@ -547,13 +585,16 @@ describe('Record dashboard and selective exports', () => {
         created,
       ]);
     }
-    const response = await request(app).get('/api/records').set('Authorization', `Bearer ${token}`).query({
-      dataset: 'auditLogs',
-      search: marker,
-      action: 'DATE_TEST',
-      from: '2026-01-02',
-      to: '2026-01-02',
-    });
+    const response = await request(app)
+      .get('/api/records')
+      .set('Authorization', `Bearer ${token}`)
+      .query({
+        dataset: 'auditLogs',
+        search: marker,
+        action: 'DATE_TEST',
+        from: '2026-01-02',
+        to: '2026-01-02',
+      });
     expect(response.status).toBe(200);
     expect(response.body.total).toBe(2);
     expect(response.body.records.map((row: { created_at: string }) => row.created_at)).toEqual([
@@ -566,7 +607,10 @@ describe('Record dashboard and selective exports', () => {
     const marker = randomUUID();
     for (let i = 0; i < 5; i++) await writeAudit(pool, 'PAGE_TEST', { marker, i });
     const filters = { dataset: 'auditLogs', action: 'PAGE_TEST', search: marker, pageSize: 2 };
-    const first = await request(app).get('/api/records').set('Authorization', `Bearer ${token}`).query(filters);
+    const first = await request(app)
+      .get('/api/records')
+      .set('Authorization', `Bearer ${token}`)
+      .query(filters);
     expect(first.body.total).toBe(5);
     await writeAudit(pool, 'PAGE_TEST', { marker, i: 5 });
     const second = await request(app)
