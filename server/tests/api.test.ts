@@ -493,3 +493,194 @@ describe('Audit trail and record copies', () => {
     expect(data.auditLogs.some((row) => row.details.unitId === latestO)).toBe(false);
   });
 });
+
+describe('Record dashboard and selective exports', () => {
+  it('filters audit records by action, outcome and literal search, and audits access', async () => {
+    const marker = `${randomUUID()}_%`;
+    await writeAudit(pool, 'DONATION', { marker });
+    await writeAudit(pool, 'REQUEST_FAILED', { marker }, undefined, 'REJECTED');
+    const response = await request(app).get('/api/records').query({
+      dataset: 'auditLogs',
+      search: marker,
+      action: 'REQUEST_FAILED',
+      outcome: 'REJECTED',
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBe(1);
+    expect(response.body.records).toMatchObject([
+      { action: 'REQUEST_FAILED', outcome: 'REJECTED', details: { marker } },
+    ]);
+    expect(response.body.actions).toContain('DONATION');
+    expect(await auditFor(response)).toMatchObject([
+      { action: 'RECORDS_VIEWED', details: { total: 1 } },
+    ]);
+    const noMatches = await request(app)
+      .get('/api/records')
+      .query({ dataset: 'auditLogs', search: "' OR true --", action: 'DONATION' });
+    expect(noMatches.body.total).toBe(0);
+  });
+
+  it('treats date ranges as inclusive Jerusalem calendar days', async () => {
+    const marker = randomUUID();
+    for (const created of [
+      '2026-01-01T21:59:59Z',
+      '2026-01-01T22:00:00Z',
+      '2026-01-02T21:59:59Z',
+      '2026-01-02T22:00:00Z',
+    ]) {
+      await pool.query('INSERT INTO audit_logs(action, details, created_at) VALUES ($1, $2, $3)', [
+        'DATE_TEST',
+        JSON.stringify({ marker }),
+        created,
+      ]);
+    }
+    const response = await request(app).get('/api/records').query({
+      dataset: 'auditLogs',
+      search: marker,
+      action: 'DATE_TEST',
+      from: '2026-01-02',
+      to: '2026-01-02',
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBe(2);
+    expect(response.body.records.map((row: { created_at: string }) => row.created_at)).toEqual([
+      '2026-01-02T21:59:59.000Z',
+      '2026-01-01T22:00:00.000Z',
+    ]);
+  });
+
+  it('keeps pagination stable as new audit entries arrive', async () => {
+    const marker = randomUUID();
+    for (let i = 0; i < 5; i++) await writeAudit(pool, 'PAGE_TEST', { marker, i });
+    const filters = { dataset: 'auditLogs', action: 'PAGE_TEST', search: marker, pageSize: 2 };
+    const first = await request(app).get('/api/records').query(filters);
+    expect(first.body.total).toBe(5);
+    await writeAudit(pool, 'PAGE_TEST', { marker, i: 5 });
+    const second = await request(app)
+      .get('/api/records')
+      .query({ ...filters, snapshotAt: first.body.snapshotAt, page: 2 });
+    expect(second.body.total).toBe(5);
+    expect(first.body.records.map((row: { details: { i: number } }) => row.details.i)).toEqual([
+      4, 3,
+    ]);
+    expect(second.body.records.map((row: { details: { i: number } }) => row.details.i)).toEqual([
+      2, 1,
+    ]);
+    const emptyPage = await request(app)
+      .get('/api/records')
+      .query({ ...filters, snapshotAt: first.body.snapshotAt, page: 4 });
+    expect(emptyPage.body.total).toBe(5);
+    expect(emptyPage.body.records).toEqual([]);
+  });
+
+  it('exports exactly the checked records, including selections across pages, as pretty JSON', async () => {
+    const first = await add();
+    await add();
+    const third = await add();
+    const response = await request(app)
+      .post('/api/records/export')
+      .send({ filters: { dataset: 'bloodUnits' }, ids: [first.body.unitId, third.body.unitId] });
+    expect(response.status).toBe(200);
+    expect(response.headers['content-disposition']).toContain('bloodbank_bloodUnits_selected.json');
+    expect(response.text).toContain('\n  "formatVersion": 1,\n');
+    expect(response.body.recordCount).toBe(2);
+    expect(response.body.records.map((row: { unit_id: string }) => row.unit_id).sort()).toEqual(
+      [first.body.unitId, third.body.unitId].sort(),
+    );
+    expect(response.body.records[0].donation_date).toBe('2026-01-01');
+    expect(await auditFor(response)).toMatchObject([
+      {
+        action: 'RECORDS_EXPORTED',
+        details: {
+          scope: 'selected',
+          recordCount: 2,
+          recordIds: [first.body.unitId, third.body.unitId],
+        },
+      },
+    ]);
+    const missing = await request(app)
+      .post('/api/records/export')
+      .send({ filters: { dataset: 'bloodUnits' }, ids: [randomUUID()] });
+    expect(missing.status).toBe(409);
+    expect(missing.body.code).toBe('EXPORT_SELECTION_CHANGED');
+  });
+
+  it('exports every match beyond the displayed page while respecting its snapshot', async () => {
+    for (let i = 0; i < 4; i++) await add('O+');
+    await add('A+');
+    const page = await request(app)
+      .get('/api/records')
+      .query({ dataset: 'bloodUnits', search: 'O+', pageSize: 2 });
+    expect(page.body.records).toHaveLength(2);
+    expect(page.body.total).toBe(4);
+    await add('O+');
+    const exported = await request(app)
+      .post('/api/records/export')
+      .send({ filters: { dataset: 'bloodUnits', search: 'O+', snapshotAt: page.body.snapshotAt } });
+    expect(exported.status).toBe(200);
+    expect(exported.body.scope).toBe('filtered');
+    expect(exported.body.recordCount).toBe(4);
+    expect(
+      exported.body.records.every((row: { blood_type: string }) => row.blood_type === 'O+'),
+    ).toBe(true);
+    const full = await request(app).get('/api/export');
+    expect(full.text).toContain('\n  "formatVersion": 1,\n');
+    expect(full.body.bloodUnits).toHaveLength(6);
+  });
+
+  it('browses and exports dispensing records, issued units and saved request receipts', async () => {
+    await add();
+    const issued = await confirm(await preview('A+', 1));
+    for (const dataset of ['dispenseEvents', 'dispenseEventUnits', 'operationRequests']) {
+      const response = await request(app)
+        .get('/api/records')
+        .query({ dataset, search: issued.body.eventId });
+      expect(response.status).toBe(200);
+      expect(response.body.total).toBe(1);
+      const record = response.body.records[0];
+      const id = record.unit_id ?? record.event_id ?? record.request_key;
+      const exported = await request(app)
+        .post('/api/records/export')
+        .send({ filters: { dataset }, ids: [id] });
+      expect(exported.status).toBe(200);
+      expect(exported.body.records).toEqual([record]);
+    }
+  });
+
+  it('rejects invalid collections, filters, pages and selections', async () => {
+    for (const change of [
+      { dataset: 'audit_logs; DROP TABLE blood_units' },
+      { from: '2026-02-30' },
+      { from: '2026-02-01', to: '2026-01-01' },
+      { page: 0 },
+      { pageSize: 101 },
+      { dataset: 'bloodUnits', action: 'DONATION' },
+      { outcome: 'UNKNOWN' },
+      { search: 'x'.repeat(201) },
+      { snapshotAt: 'yesterday' },
+    ]) {
+      expect(
+        (
+          await request(app)
+            .get('/api/records')
+            .query({ dataset: 'auditLogs', ...change })
+        ).status,
+      ).toBe(400);
+    }
+    const id = randomUUID();
+    for (const ids of [
+      [],
+      ['invalid'],
+      [id, id],
+      Array.from({ length: 201 }, () => randomUUID()),
+    ]) {
+      expect(
+        (
+          await request(app)
+            .post('/api/records/export')
+            .send({ filters: { dataset: 'auditLogs' }, ids })
+        ).status,
+      ).toBe(400);
+    }
+  });
+});

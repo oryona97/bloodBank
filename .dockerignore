@@ -1,0 +1,10 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!client/
+!client/**
+!server/
+!server/**
+!shared/
+!shared/**

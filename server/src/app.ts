@@ -8,11 +8,14 @@ import {
   confirmSchema,
   requestKeySchema,
   cancellationSchema,
+  recordsQuerySchema,
+  recordsExportSchema,
 } from './validation.js';
 import type { ApiErrorBody } from '../../shared/apiTypes.js';
 import { writeAudit, type AuditContext } from './storage/auditRepository.js';
 import { getInventory, getActivity } from './storage/inventoryRepository.js';
 import { getFullExport } from './storage/exportRepository.js';
+import { getRecords, exportRecords } from './storage/recordsRepository.js';
 import {
   registerDonation,
   confirmDispensing,
@@ -99,7 +102,21 @@ export function createApp(pool: Pool) {
     const data = await getFullExport(pool, auditContext(res));
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', 'attachment; filename="bloodbank_export.json"');
-    res.json(data);
+    res.send(JSON.stringify(data, null, 2) + '\n');
+  });
+  app.get('/api/records', async (req, res) => {
+    const { page, pageSize, ...filters } = recordsQuerySchema.parse(req.query);
+    res.json(await getRecords(pool, filters, page, pageSize, auditContext(res)));
+  });
+  app.post('/api/records/export', async (req, res) => {
+    const { filters, ids } = recordsExportSchema.parse(req.body);
+    const data = await exportRecords(pool, filters, ids, auditContext(res));
+    res.type('application/json');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="bloodbank_${filters.dataset}_${data.scope}.json"`,
+    );
+    res.send(JSON.stringify(data, null, 2) + '\n');
   });
   app.use('/api', () => {
     throw new AppError(404, 'NOT_FOUND', 'API endpoint not found.');

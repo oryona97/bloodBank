@@ -23,7 +23,16 @@ Completed items use `[x]`. Items remain unchecked until implemented and verified
 - [x] Stage 8: Verify the browser workflows and write setup and demo instructions.
 - [x] Stage 9: Commit and push the working application and updated checklist.
 
-**Status:** The baseline implementation is complete. The current audit/export extension adds complete API activity logging, explicit cancellation logging, append-only audit protection, and consistent JSON copies of all application tables. Local PostgreSQL verification passes all 25 integration tests, including the 16 baseline cases. These changes have not been published or verified by a new GitHub CI run. Implementation follows the mixed-type, all-or-nothing allocation policy below.
+**Status:** The baseline implementation is complete. The audit/export extension adds complete API activity logging, explicit cancellation logging, append-only audit protection, consistent complete JSON copies, and a dashboard for filtering and exporting individual records. Local PostgreSQL verification passes all 32 integration tests, including the 16 baseline cases. Implementation follows the mixed-type, all-or-nothing allocation policy below.
+
+### Record dashboard verification (2026-10-03)
+
+- [x] Add a fourth screen with record collections, text/date/action/outcome filters, pagination, and expandable details.
+- [x] Export individual rows, selections across pages, all matches, or the complete database as indented JSON.
+- [x] Preserve audit immutability and audit dashboard access and exports.
+- [x] 74 domain tests and 32 PostgreSQL integration tests pass (106 total).
+- [x] Rebuild and start the Docker app; verify filtering and selected downloads in the browser.
+- [x] Verify the downloaded single-record JSON has 34 lines and only the chosen record; verify a second download includes exactly two donations selected across pages.
 
 ### Audit/export verification (2026-10-03)
 
