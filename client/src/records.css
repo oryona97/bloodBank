@@ -10,9 +10,13 @@
 }
 .records-summary > div {
   padding: 24px;
-  background: white;
-  border: 1px solid var(--border);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.05));
+  backdrop-filter: var(--glass-blur, blur(20px));
+  -webkit-backdrop-filter: var(--glass-blur, blur(20px));
+  border: var(--glass-border, 1px solid rgba(255, 255, 255, 0.1));
+  box-shadow: var(--glass-shadow, 0 8px 32px 0 rgba(0, 0, 0, 0.37));
   border-radius: 14px;
+  color: #fff;
 }
 .records-summary strong {
   display: block;
@@ -31,7 +35,8 @@
   font-size: 12px;
 }
 .records-summary .records-protection {
-  background: #eaf0e8;
+  background: rgba(231, 76, 60, 0.15); /* Reddish tint for protection */
+  border-color: rgba(231, 76, 60, 0.3);
 }
 .records-protection strong {
   font-size: 20px;
@@ -81,10 +86,10 @@
   min-width: 0;
   height: 43px;
   padding: 9px 12px;
-  border: 1px solid #dce1d8;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
-  color: #253731;
-  background: #fafbf8;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.2);
   font-size: 13px;
 }
 .record-filters input:focus-visible,
@@ -111,8 +116,8 @@
 }
 .export-toolbar {
   padding: 20px 26px;
-  background: #f5f7f2;
-  border-block: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  border-block: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -152,9 +157,9 @@
   font-size: 13px;
 }
 .record-table th {
-  background: #fafbf8;
+  background: rgba(0, 0, 0, 0.3);
   padding: 15px;
-  color: #6e7d71;
+  color: #cbd5e0;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -162,7 +167,7 @@
 }
 .record-table td {
   padding: 16px 15px;
-  border-top: 1px solid #edf0e9;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   vertical-align: middle;
 }
 .record-table .checkbox-cell {
@@ -196,7 +201,7 @@
   line-height: 1.6;
 }
 .record-selected {
-  background: #f0f6ee;
+  background: rgba(255, 255, 255, 0.1);
 }
 .record-badge {
   padding: 5px 8px;
@@ -219,7 +224,7 @@
   background: #fbeae7;
 }
 .record-detail-row td {
-  background: #f7f9f5;
+  background: rgba(0, 0, 0, 0.2);
 }
 .record-detail-heading {
   display: flex;
@@ -237,9 +242,10 @@
     monospace;
   margin: 0;
   padding: 20px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
-  background: white;
+  background: rgba(0, 0, 0, 0.4);
+  color: #e2e8f0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   max-height: 450px;
