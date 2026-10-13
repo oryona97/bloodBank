@@ -26,8 +26,28 @@ export async function getFullExport(pool: Pool, context?: AuditContext) {
     const schemaMigrations = await client.query('SELECT * FROM schema_migrations ORDER BY name');
     const inventoryLock = await client.query('SELECT * FROM inventory_lock ORDER BY id');
     const auditLogs = await client.query('SELECT * FROM audit_logs ORDER BY created_at, sequence');
+    const expanded: Record<string, unknown> = {};
+    const tables = {
+      donors: 'donors',
+      donations: 'donations',
+      bloodComponents: 'blood_components',
+      componentTypes: 'component_types',
+      storageLocations: 'storage_locations',
+      labTestTypes: 'lab_test_types',
+      labResults: 'lab_results',
+      releaseDecisions: 'release_decisions',
+      dispenseEventComponents: 'dispense_event_components',
+    };
+    for (const [name, table] of Object.entries(tables))
+      expanded[name] = (await client.query(`SELECT * FROM ${table}`)).rows;
+    expanded.users = (
+      await client.query(
+        'SELECT id,username,role,active,created_at FROM users ORDER BY created_at,id',
+      )
+    ).rows;
     const data = {
-      formatVersion: 1,
+      formatVersion: 2,
+      ...expanded,
       exportedAt: timestamp.rows[0].exported_at,
       inventory: BLOOD_TYPES.map((blood_type) => ({ blood_type, count: inventory[blood_type] })),
       bloodUnits: bloodUnits.rows,

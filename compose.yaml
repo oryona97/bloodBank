@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      DEMO_MODE: ${DEMO_MODE:-true}
+      JWT_SECRET: ${JWT_SECRET:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       HOST: 0.0.0.0
       PORT: '3001'
       PGHOST: db

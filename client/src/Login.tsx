@@ -88,7 +88,7 @@ export function Login({
           </button>
         </form>
 
-        <div className="login-footer">HIPAA & PART 11 COMPLIANT SYSTEM</div>
+        <div className="login-footer">EDUCATIONAL BECS SIMULATION · SYNTHETIC DATA ONLY</div>
       </div>
     </div>
   );

@@ -1,80 +1,65 @@
-# Blood Bank
+# Blood Bank — BECS final project
 
-BECS student assignment for donation intake, routine blood dispensing, and emergency O-negative dispensing.
+Educational blood-bank simulation implementing the professor-approved expansion: blood components and laboratory quarantine/release, expiry, FEFO, separate roles, audit and exports. Use synthetic data. Storage and compatibility policies are project assumptions, not clinical protocols or regulatory certification.
 
-## Status
+See the [approved Hebrew proposal](docs/proposal/BECS-project-proposal.he.docx), [implementation and validation](docs/proposal/IMPLEMENTATION.md), [architecture and ERD](docs/architecture.md), [glossary](GLOSSARY.md), and [architectural decisions](docs/adr/).
 
-Donation intake, routine allocation and confirmation, emergency O-negative release, live inventory, and recent activity are implemented. PostgreSQL also stores an append-only audit trail. **Audit & records** provides a searchable record dashboard with selective exports and complete database copies as readable JSON. The system features **Role-Based Access Control (RBAC)** with JWT authentication, ensuring HIPAA compliance by scrubbing Protected Health Information (PHI) for restricted roles, and includes an Admin-exclusive **User Management** dashboard.
+## Implemented workflows
 
-See [PLAN.md](PLAN.md) for the development checklist (`[x]` means completed), requirements, allocation rules, architecture, and verification results.
+- Donations enter quarantine with a collection timestamp. An operator produces PRBC + FFP, optionally Platelets. Cryoprecipitate consumes an unissued FFP source, which cannot also be dispensed.
+- Components reference immutable product-profile versions and assigned storage locations. Initial simulation profiles: PRBC 42 days at 1–6°C; FFP and Cryo 365 days at ≤−18°C; Platelets 5 days at 20–24°C with agitation. One day means 24 elapsed hours, including daylight-saving transitions. Cryo cannot outlast its source.
+- Laboratory clearance requires matching ABO/Rh and negative HIV, HBV, HCV and syphilis results, followed by explicit approval. Missing, pending, reactive and indeterminate results block release. Results and decisions are append-only. Corrections require a reason and invalidate clearance, quarantining remaining available components; issued components are flagged in audit.
+- PRBC allocation preserves exact-type/common-alternative/O−-last priorities. FEFO applies within type priority. Plasma uses ABO plasma compatibility, ignoring Rh. Platelets require exact ABO/Rh; Cryo requires exact ABO. The latter two are restricted simulation policies.
+- Routine issue requires product, recipient type, quantity and synthetic recipient reference. Emergency issue takes a requested quantity of eligible PRBC O−. Both recheck clearance, expiry, storage and exact selection under the inventory lock. Shortages issue nothing. Retries do not repeat changes.
+- Inventory shows product/type counts and status totals. Components support filters, pagination, seven-day expiry reports, discard with reason and verified legacy-detail completion.
+- Administrators can revise expiry profiles without changing existing components, manage account roles/status, search records and export JSON. Storage classes and the laboratory panel are fixed versioned catalog entries. Sensors and measured cold-chain control are excluded.
 
-## Submission materials
+## Run the local demo
 
-The [Hebrew submission guide](docs/submission/guide.he.html) includes eight application screenshots, workflow explanations, allocation rules, and verification results. Download it and open it in a browser; all images are embedded for offline viewing.
-
-The screenshots describe the original BECS workflows. The audit and export additions are documented below. Review against the updated course slides remains pending until they are provided.
-
-## Stack
-
-- React, TypeScript, and Vite frontend
-- Node.js, TypeScript, and Express backend
-- PostgreSQL with node-postgres (`pg`) and SQL migrations
-- Vitest and PostgreSQL integration tests
-
-The frontend lives in `client/`, the backend and migrations in `server/`, and shared API types in `shared/`.
-
-## Run with Docker Compose
-
-With Docker running, execute this from the repository root:
+With Docker running, from the repository root:
 
 ```sh
-docker compose up
+docker compose up --build -d
+docker compose exec -T app node dist/server/server/scripts/seed.js
 ```
 
-Open [http://localhost:3001](http://localhost:3001). Compose builds the frontend and backend, waits for PostgreSQL to be healthy, applies pending migrations, and starts the app. No local Node.js installation or `.env` file is required. The database's existing named volume is reused, preserving inventory and audit history. A new database starts empty.
+Open [the application](http://localhost:3001). Compose binds the app and PostgreSQL to localhost, applies migrations and reuses the named database volume. Stop with `docker compose down` to preserve data. Do not remove the volume when upgrading.
 
-Use `docker compose up -d` to run in the background. After changing the source, use `docker compose up --build` to rebuild the app image. Stop the stack with `docker compose down`; data remains in the named volume. `docker compose down -v` deletes that data.
+Compose explicitly defaults to `DEMO_MODE=true`. It creates these accounts only when missing:
 
-Optional synthetic demo data can be added once the app is running:
+| Username          | Password             | Role                                                    |
+| ----------------- | -------------------- | ------------------------------------------------------- |
+| `demo_operator`   | `DemoOperator123!`   | Register/process donations; manage/discard components   |
+| `demo_lab`        | `DemoLab123!`        | Record/correct results; approve/reject release; discard |
+| `demo_dispenser`  | `DemoDispenser123!`  | Routine and emergency issue                             |
+| `demo_admin`      | `DemoAdmin123!`      | Users, expiry catalogue, audit/exports and read stock   |
+| `demo_researcher` | `DemoResearcher123!` | Aggregate inventory only                                |
 
-```sh
-docker compose exec app node dist/server/server/scripts/seed.js
-```
+Roles do not inherit one another. Admin cannot approve laboratory results or dispense. Current account status and role are checked on every request; changed roles invalidate previous sessions.
 
-The seed is repeatable without duplicating donations or replenishing dispensed units. To change the browser port, set `APP_PORT` in `.env` (default `3001`). Compose uses `POSTGRES_PASSWORD` for both services; set it before initializing a new database volume. Changing it later does not change the existing database role's password. The host-side `DATABASE_URL`, `HOST`, and `PORT` settings are for local development and are not passed to the app container.
+The repeatable seed creates 41 synthetic donations and clears their components. In an empty new model it produces 41 PRBC, 33 FFP, 16 Platelets and 8 Cryo available components, plus 8 consumed FFP sources. Repeating it does not duplicate records or replenish issued/discarded stock. Legacy records retain their historical state.
 
-If switching from `npm start` or `npm run dev`, stop the local API first so port 3001 is available. Conversely, run `docker compose stop app` before starting the local API. The app container serves both the frontend and `/api` routes; port 5188 is only used by Vite during local development.
+In explicit demo mode, an omitted `JWT_SECRET` generates a random process secret; restart requires signing in again. Outside demo mode, provide a random secret of at least 32 characters and explicit `ADMIN_USERNAME`/`ADMIN_PASSWORD` for initial setup. Default accounts and authentication bypass are absent outside demo mode. Existing accounts are preserved.
 
-## Authentication & Roles
+## Upgrade an existing database
 
-The system uses JWT-based authentication. On initial startup, the database migration automatically seeds three default users representing the different system roles:
+Migrations 005–010 preserve original IDs, dates, creation times, dispensing links and audit. Legacy available units become quarantined `LEGACY` components with unknown product, collection time, storage and expiry; issued units remain issued. No results or approval are invented. Broad `WORKER` accounts are disabled; an administrator can assign a new explicit role and enable them.
 
-- **Username:** `admin` / **Password:** `admin`
-  - **Role: Admin** - Full access, including Audit Logs, User Management dashboard, and all inventory actions.
-- **Username:** `worker` / **Password:** `worker`
-  - **Role: Worker** - Can manage inventory (Deposit/Withdraw). No access to Audit Logs or User Management.
-- **Username:** `researcher` / **Password:** `researcher`
-  - **Role: Researcher** - Read-only access to aggregated inventory and PHI-scrubbed records (HIPAA compliant). No access to Audit Logs.
-
-_Note: The default admin credentials can be overridden by setting `ADMIN_USERNAME` and `ADMIN_PASSWORD` in your environment._
+An operator can use **Complete verified details** on an unissued legacy component to record a documented product, collection timestamp matching its original date, and verification reason. Its ID is retained and it stays quarantined. Laboratory work and explicit approval remain mandatory. Cryo requires a documented FFP source and its separate processing workflow.
 
 ## Develop locally
 
-Prerequisites: Node.js 24 or newer, npm, and Docker with Compose. An existing PostgreSQL installation can be used instead by supplying its connection string.
-
-Run these commands from the repository root:
+Prerequisites: Node.js 24+, npm and PostgreSQL 17 (Compose is provided).
 
 ```sh
 npm ci
 ```
 
-Copy `.env.example` to `.env`. In PowerShell:
+Copy `.env.example` to `.env`, adjusting the database connection strings. The example enables the synthetic demo. Keep credentials out of Git. In PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
-
-On macOS or Linux, use `cp .env.example .env`. The example connection strings match the local Docker configuration. If you change the Docker password, set `POSTGRES_PASSWORD` in `.env` and update the connection strings to match before first creating the database volume.
 
 ```sh
 docker compose up -d db
@@ -83,34 +68,17 @@ npm run db:seed
 npm run dev
 ```
 
-If migration starts before PostgreSQL is ready, check `docker compose ps` and rerun the migration after the service becomes healthy.
+Open [the development frontend](http://127.0.0.1:5188). Vite forwards `/api` to port 3001. Stop the Compose app before reusing its API port: `docker compose stop app`. For the built bundle run `npm run build` and `npm start`, then open port 3001. Migrate before restarting after upgrades.
 
-For an existing installation, stop the API and run `npm run db:migrate` before restarting it. Migration `003_complete_audit.sql` preserves existing records and audit history while adding audit metadata and append-only protection. Historical entries keep their original details and receive `unknown`/`legacy` attribution; missing historical identities or unit links are not fabricated.
+## Verification
 
-Open [http://127.0.0.1:5188](http://127.0.0.1:5188). The API runs at port `3001`; Vite forwards `/api` requests to it. Keep the development API at the default port unless you also update the Vite proxy. Both bind to localhost.
-
-The seed command creates 41 synthetic units on the first run. It is safe to repeat: it does not duplicate donations or refill units already dispensed. Demo donors have fabricated names and IDs.
-
-To stop development servers, press Ctrl+C. Stop PostgreSQL with `docker compose stop db`; its named volume preserves inventory. Restart it with `docker compose up -d db`.
-
-## Build and run the production bundle locally
-
-```sh
-npm run build
-npm start
-```
-
-After stopping the development API, open [http://127.0.0.1:3001](http://127.0.0.1:3001). The Express process serves both the built frontend and API. Run from the repository root and keep the configured PostgreSQL service running. This is local execution, not a public deployment.
-
-## Verify the project
-
-Create the separate test database once:
+Create the separate test database once, if absent:
 
 ```sh
 docker compose exec -T db createdb -U bloodbank bloodbank_test
 ```
 
-Set `TEST_DATABASE_URL` in `.env` (the example already matches this database), then run:
+Set `TEST_DATABASE_URL` in `.env`, then:
 
 ```sh
 npm test
@@ -119,77 +87,48 @@ npm run build
 npm run format:check
 ```
 
-- 74 domain tests cover the complete compatibility matrix, allocation priorities, and invalid quantities.
-- 32 integration tests run against real PostgreSQL: the 16 original regression cases plus audit coverage, immutable history, rollback on audit failure, consistent exports, dashboard filtering, Jerusalem date boundaries, pagination, and selected-record exports.
-- Integration tests create and remove a randomly named schema in the configured test database, leaving existing schemas untouched. The runner requires a database name ending in `_test`, distinct from `DATABASE_URL`, and a test role allowed to create schemas.
-- The GitHub Actions workflow runs formatting, tests, and the build on pushes and pull requests.
-- `npm run format` formats source and documentation.
+The user confirmed TDD boundaries at exported domain functions and HTTP endpoints with real PostgreSQL, plus manual browser checks. There are 81 domain tests and 74 integration tests covering compatibility/FEFO, quarantine, panels, corrections, confirmation-time expiry, storage, source consumption, retries, concurrent issue, role denial, disabled/stale sessions, migration preservation, audit rollback and consistent exports. Tests create/drop isolated schemas only, in a distinct database ending in `_test`.
+
+GitHub Actions runs formatting, tests and build on push/PR. Local verification is recorded in [IMPLEMENTATION.md](docs/proposal/IMPLEMENTATION.md). Remote CI can be verified when the changes are published.
 
 ## Demo walkthrough
 
-1. **Donation intake:** Enter a type, valid date, synthetic full name, and 9-digit ID. Register the donation and check that the type's stock increases by one.
-2. **Routine dispensing:** Request one A+ unit and preview the result. Cancel once to verify inventory stays unchanged. Preview again and confirm to issue it.
-3. **Alternatives:** Request more A+ units than its exact stock, while staying within total compatible stock. The preview combines A+, O+, A-, and finally O- as necessary. Only compatible types are shown.
-4. **Shortage:** Request 1,000 units from the demo inventory. The app reports the shortfall and offers no confirmation action.
-5. **Emergency dispensing:** Review the O-negative quantity, choose release, and confirm. All current O- units are issued. The empty-stock message appears afterward and prevents another release.
-6. Reload the page. Counts and recent activity should remain. New O- donations make emergency release available again.
-7. Open **Audit & records** from the sidebar or **Audit & export records** above the inventory. Filter logs, open a row's **Details**, and check the rows to download. **Export selected** downloads just those rows; **Export all matches** includes every match across all pages. **Download full database** retains the complete export, including its own export event.
+1. As operator, register a synthetic donation and produce components. Verify quarantine and exclusion from available stock.
+2. As lab, select it and try release with missing tests. Record matching ABO/Rh and four negative screenings, then explicitly approve.
+3. As dispenser, preview a compatible product request, cancel, preview again and confirm. Only confirmation changes stock. Shortages cannot be confirmed.
+4. In **Emergency PRBC O−**, enter quantity and a synthetic reference. Only that many eligible O− red-cell components are issued.
+5. As lab, append a correction with a reason. Remaining available components return to quarantine until another valid approval.
+6. As operator, derive Cryo from FFP: its source becomes Processed. Inspect expiry filters or discard an unissued component with a reason.
+7. As admin, inspect audit, donations, components, results, decisions, issue links, legacy records and request receipts. Selected/matching/full exports are audited. Full export format 2 includes new tables and user metadata, excluding password hashes.
+8. As researcher, verify aggregate inventory only. Reload preserves database state.
 
-Reads and previews add audit entries without changing stock. Add synthetic donations through the intake screen to replenish stock for another walkthrough.
+## API boundaries
 
-## Audit trail and copies of records
+Except `/api/health` and `/api/auth/login`, endpoints require `Authorization: Bearer <token>`. Donation/component/lab/catalogue/account-update/issue mutations require a UUID `Idempotency-Key`; reuse with different operation or payload fails. User creation and cancellation retain single-operation behavior.
 
-### Record dashboard
+| Method and route                                                  | Authorized role                 | Purpose                                              |
+| ----------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------- |
+| `GET /api/inventory`                                              | All                             | Aggregates; researcher receives no activity records  |
+| `GET /api/donations`                                              | Operator, Lab, Admin            | Work list; identifying fields restricted to Operator |
+| `POST /api/donations`                                             | Operator                        | Register in quarantine                               |
+| `POST /api/donations/:id/components`                              | Operator                        | Produce template once                                |
+| `GET /api/components`                                             | Operator, Lab, Dispenser, Admin | Filtered records                                     |
+| `POST /api/components/:id/process`                                | Operator                        | Consume FFP and derive Cryo                          |
+| `POST /api/components/:id/legacy-details`                         | Operator                        | Complete documented metadata, retaining quarantine   |
+| `POST /api/components/:id/discard`                                | Operator, Lab                   | Discard with reason                                  |
+| `GET/POST /api/donations/:id/lab-results`                         | Lab                             | History / append revision                            |
+| `POST /api/donations/:id/release`                                 | Lab                             | Explicit approve/reject                              |
+| `POST /api/dispensing/preview`                                    | Dispenser                       | Compatible FEFO proposal or shortage                 |
+| `POST /api/dispensing/confirm`                                    | Dispenser                       | Recheck exact selection and issue                    |
+| `POST /api/dispensing/emergency`                                  | Dispenser                       | Requested PRBC O− quantity                           |
+| `POST /api/activities/cancel`                                     | Dispenser                       | Audited cancellation                                 |
+| `GET /api/catalog`                                                | Operator, Lab, Dispenser, Admin | Profiles, locations and panel                        |
+| `POST /api/catalog/products`                                      | Admin                           | Append expiry-policy version                         |
+| `GET/POST /api/users`, `POST /api/users/:id`                      | Admin                           | View/create; role/status changes                     |
+| `GET /api/records`, `POST /api/records/export`, `GET /api/export` | Admin                           | Audited records and exports                          |
 
-The fourth workspace screen lets you browse **Audit logs**, **Blood donations**, **Dispensing events**, **Issued units**, and **Request receipts**. Search matches literal text anywhere in a record, including IDs and nested details. Date filters include both endpoints and use the record's creation/issue time in `Asia/Jerusalem`; audit logs can also be filtered by action and outcome. Select **Apply filters** to run the search, or **Reset** to clear it. Rows are displayed newest first, with 20 per page.
+Record searches treat text literally; date filters use inclusive Jerusalem days. Snapshot cutoffs exclude later records from pagination/exports. Mutable records can change, requiring refresh. Full copies use REPEATABLE READ and include their own export audit event.
 
-Select individual checkboxes or the current page's header checkbox. Up to 200 explicitly selected records can be retained across pages. Changing the collection, applying filters, or refreshing clears the selection. **Export all matches** has no page-size restriction. The result cutoff is reused while paging/exporting to exclude subsequently created records; **Refresh records** loads newer activity. Mutable stock records can still change between viewing and exporting; selected records that no longer match return an error asking you to refresh.
+Audit stores server time, sequence, request ID, action, outcome and actor/role. Append-only triggers protect audit, results, decisions and profiles. Database owners can change schemas/triggers. The application uses a shared database account with application RBAC. ISBT 128, lots/barcodes, cold-chain sensors, clinical crossmatch/reservations, patient records and full recall/lookback are excluded.
 
-All downloads contain two-space indentation and line breaks. A selective export includes its dataset, filters, scope, timestamp, count, and a `records` array containing only the chosen/matching rows. A complete copy keeps the original full-export structure described below. Dashboard access and both export scopes are audited. Audit history remains read-only; no editing or deletion controls are provided.
-
-### Stored history and complete copies
-
-The audit trail records donation registration, routine and emergency dispensing, inventory reads, allocation previews (including shortages), explicit routine/emergency cancellations, health checks, exports, rejected requests, and request retries. Successful stock changes and their audit records commit together. A failure to store the success audit rolls back the stock change. Rejected API requests are recorded after rollback, with their error code and status; malformed payloads are not copied into the audit trail.
-
-Each new entry includes a database timestamp, sequence number, action, outcome, source, actor, and details. API entries also have a server-generated request ID (returned in `X-Request-Id`), HTTP method/path, and the supplied idempotency key when present. Donation entries identify the created unit; dispensing entries identify the event and every issued unit. Retries create `REQUEST_REPLAYED` entries without repeating the stock change. The UI waits for cancellation to be recorded before dismissing its confirmation.
-
-API actions are authenticated via JWT, tracking the exact actor and their role for every operation. Seed and internal operations identify their system source. Browser-only interactions such as typing or changing tabs are not business records. Database triggers reject audit `UPDATE`, `DELETE`, and `TRUNCATE`; a database owner/administrator can still change the schema or disable triggers. If PostgreSQL is unavailable, the API returns 503 and writes the audit failure to server diagnostics; it cannot persist a database audit entry during that outage.
-
-The JSON download contains `bloodUnits` (available and dispensed), `dispenseEvents`, `dispenseEventUnits`, `operationRequests`, all `auditLogs`, all eight inventory counts, and the application tables `schemaMigrations` and `inventoryLock`. Donor IDs remain strings, and donation dates remain `YYYY-MM-DD`. Logs are ordered by timestamp and then sequence. `formatVersion` identifies the export structure; `exportedAt` is the transaction start time.
-
-All export reads share one PostgreSQL `REPEATABLE READ` transaction, so concurrent stock changes cannot produce contradictory tables in a copy. The export includes its own `RECORDS_EXPORTED` entry. That entry records generation of the copy, not confirmation that a browser saved the download. This implements the assignment's audit/export scope; it is not a claim of full regulatory certification.
-
-## Allocation and data decisions
-
-- Exact type first; then compatible alternatives by descending assignment population share, with O- last among alternatives.
-- Requests may combine several compatible types. Insufficient total stock causes no dispensing: fulfillment is all-or-nothing.
-- Oldest donations are issued first within each type. No expiry is modeled.
-- One donation submission creates one unit. Donor IDs are stored as text and validated as 9 digits; checksum validation is not part of this assignment implementation.
-- The backend rechecks stock on confirmation. Transactions serialize inventory writes so routine and emergency requests cannot issue the same units.
-- Donation and dispensing writes use UUID `Idempotency-Key` headers. Retrying the same action with the same key returns the original receipt instead of issuing again.
-
-## API
-
-Except for `/api/health` and `/api/auth/login`, all endpoints require a valid JWT in the `Authorization: Bearer <token>` header.
-
-| Method | Route                       | Purpose                                                 |
-| ------ | --------------------------- | ------------------------------------------------------- |
-| GET    | `/api/health`               | Check database/schema connectivity                      |
-| POST   | `/api/auth/login`           | Authenticate and receive a JWT                          |
-| GET    | `/api/inventory`            | Available counts and the latest eight activities        |
-| POST   | `/api/donations`            | Register one unit                                       |
-| POST   | `/api/dispensing/preview`   | Preview an allocation without changing stock            |
-| POST   | `/api/dispensing/confirm`   | Validate and issue the previewed allocation             |
-| POST   | `/api/dispensing/emergency` | Issue all current O-negative stock                      |
-| POST   | `/api/activities/cancel`    | Record a routine or emergency cancellation              |
-| GET    | `/api/export`               | Download all application records and audit logs as JSON |
-| GET    | `/api/records`              | Filter and page through one record collection           |
-| POST   | `/api/records/export`       | Export matching records or an explicit selection        |
-| GET    | `/api/users`                | List all users (Admin only)                             |
-| POST   | `/api/users`                | Create a new user (Admin only)                          |
-
-Runtime input validation is enforced on the API. Donation and dispensing writes require an `Idempotency-Key` UUID. Cancellation takes `{ "operation": "EMERGENCY" }` or `{ "operation": "ROUTINE", "recipientType": "A+", "quantity": 1 }`. Invalid input returns HTTP 400; oversized bodies return 413; stale allocations and empty emergency stock return 409. Database or audit unavailability returns 503.
-
-## Assignment scope
-
-This project follows the simplified compatibility and storage assumptions supplied in the assignment. It is an educational simulation, not a clinical transfusion system.
+The [original submission guide](docs/submission/guide.he.html) is historical; its immediate-stock workflows predate this expansion.

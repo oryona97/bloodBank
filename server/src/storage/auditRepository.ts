@@ -29,7 +29,12 @@ export async function writeAudit(
       context.requestId ?? null,
       context.requestKey ?? null,
       outcome,
-      JSON.stringify({ method: context.method, path: context.path }),
+      JSON.stringify({
+        method: context.method,
+        path: context.path,
+        userId: context.userId,
+        role: context.role,
+      }),
     ],
   );
 }

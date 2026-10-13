@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import bcrypt from 'bcrypt';
 import request from 'supertest';
 import { Pool } from 'pg';
+import { beforeAll, afterAll, it, expect, describe } from 'vitest';
 import { createApp } from '../src/app.js';
 import { createPool } from '../src/storage/database.js';
 import { migrate } from '../src/storage/migrate.js';
@@ -12,97 +13,145 @@ if (
   !connection ||
   !new URL(connection).pathname.endsWith('_test') ||
   connection === process.env.DATABASE_URL
-) {
-  throw new Error('Set TEST_DATABASE_URL to a separate database whose name ends in _test.');
-}
-
-const schema = `auth_review_${randomUUID().replaceAll('-', '')}`;
-const adminPool = createPool(connection);
-const poolOptions = {
-  connectionString: connection,
-  options: `-c search_path=${schema}`,
-  connectionTimeoutMillis: 5000,
-};
-const pool = new Pool(poolOptions);
-const app = createApp(pool);
-
+)
+  throw new Error('Use a separate test database ending in _test.');
+const schema = `roles_${randomUUID().replaceAll('-', '')}`,
+  owner = createPool(connection);
+const pool = new Pool({ connectionString: connection, options: `-c search_path=${schema}` }),
+  app = createApp(pool);
+const tokens: Record<string, string> = {};
 beforeAll(async () => {
-  await adminPool.query(`CREATE SCHEMA ${schema}`);
+  await owner.query(`CREATE SCHEMA ${schema}`);
   await migrate(pool);
-
-  // Seed users for testing
-  await pool.query(
-    `
-    INSERT INTO users (id, username, password_hash, role)
-    VALUES 
-      ($1, 'admin1', 'hashed_pw', 'ADMIN'),
-      ($2, 'worker1', 'hashed_pw', 'WORKER'),
-      ($3, 'researcher1', 'hashed_pw', 'RESEARCHER')
-  `,
-    [randomUUID(), randomUUID(), randomUUID()],
-  );
+  const hash = await bcrypt.hash('test-password', 4);
+  for (const role of ['ADMIN', 'OPERATOR', 'LAB', 'DISPENSER', 'RESEARCHER']) {
+    await pool.query('INSERT INTO users(id,username,password_hash,role) VALUES ($1,$2,$3,$4)', [
+      randomUUID(),
+      role,
+      hash,
+      role,
+    ]);
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({ username: role, password: 'test-password' });
+    expect(response.status).toBe(200);
+    tokens[role] = response.body.token;
+  }
 });
-
-beforeEach(async () => {
-  await pool.query(
-    'TRUNCATE operation_requests, dispense_event_units, dispense_events, blood_units',
-  );
-});
-
 afterAll(async () => {
   await pool.end();
   try {
-    await adminPool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await owner.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
   } finally {
-    await adminPool.end();
+    await owner.end();
   }
 });
-
-describe('Authentication and RBAC', () => {
-  it('issues a JWT for valid credentials', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'admin1', password: 'password123' }); // assume a mock or bypass for test pw
-
-    // We expect a 200 and a token
-    expect(response.status).toBe(200);
-    expect(response.body.token).toBeDefined();
-  });
-
-  it('rejects unauthenticated requests to protected endpoints', async () => {
-    const response = await request(app).get('/api/inventory');
-    expect(response.status).toBe(401);
-  });
-});
-
-describe('Database Layer PHI De-identification for Researchers', () => {
-  it('scrubs donor_id and donor_full_name for RESEARCHER role when fetching records', async () => {
-    // 1. Insert a blood unit directly
+describe('Role separation and authentication', () => {
+  it('does not create an account when its success audit cannot be saved', async () => {
     await pool.query(
-      'INSERT INTO blood_units (unit_id, blood_type, donation_date, donor_id, donor_full_name) VALUES ($1, $2, $3, $4, $5)',
-      [randomUUID(), 'A+', '2026-01-01', '000000018', 'Synthetic Donor'],
+      "CREATE FUNCTION fail_user_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='USER_CREATED' THEN RAISE EXCEPTION 'simulated audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_user_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_user_audit()",
     );
-
-    // 2. Login as Researcher
-    const loginRes = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'researcher1', password: 'password123' });
-    const token = loginRes.body.token;
-
-    // 3. Query records
+    try {
+      const response = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${tokens.ADMIN}`)
+        .send({ username: 'rollback-account', password: 'test-password', role: 'RESEARCHER' });
+      expect(response.status).toBe(503);
+      const users = await request(app)
+        .get('/api/users')
+        .set('Authorization', `Bearer ${tokens.ADMIN}`);
+      expect(users.body.some((u: { username: string }) => u.username === 'rollback-account')).toBe(
+        false,
+      );
+    } finally {
+      await pool.query(
+        'DROP TRIGGER fail_user_audit ON audit_logs; DROP FUNCTION fail_user_audit()',
+      );
+    }
+  });
+  it('records successful sign-in attribution without exposing credentials', async () => {
     const response = await request(app)
-      .get('/api/records')
-      .query({ dataset: 'bloodUnits' })
-      .set('Authorization', `Bearer ${token}`);
-
+      .post('/api/auth/login')
+      .send({ username: 'LAB', password: 'test-password' });
     expect(response.status).toBe(200);
-    expect(response.body.records).toHaveLength(1);
-
-    const record = response.body.records[0];
-    expect(record.blood_type).toBe('A+');
-
-    // Crucial: PHI must be missing or redacted (null/undefined) due to DB view filtering
-    expect(record.donor_id).toBeUndefined();
-    expect(record.donor_full_name).toBeUndefined();
+    const records = await request(app)
+      .get('/api/records?dataset=auditLogs&action=LOGIN_SUCCEEDED')
+      .set('Authorization', `Bearer ${tokens.ADMIN}`);
+    expect(records.body.records).toContainEqual(
+      expect.objectContaining({
+        actor: 'LAB',
+        details: expect.objectContaining({ role: 'LAB' }),
+        context: expect.objectContaining({ userId: response.body.user.id, role: 'LAB' }),
+      }),
+    );
+    expect(JSON.stringify(records.body.records)).not.toContain('test-password');
+    expect(JSON.stringify(records.body.records)).not.toContain(response.body.token);
+  });
+  it('requires a valid, signed, unexpired token', async () => {
+    for (const token of ['', 'invalid.jwt.value'])
+      expect(
+        (await request(app).get('/api/inventory').set('Authorization', `Bearer ${token}`)).status,
+      ).toBe(401);
+  });
+  it('rejects malformed sign-in payloads', async () => {
+    for (const body of [
+      { username: [] as string[], password: 'x' },
+      { username: 'ADMIN' },
+      { username: 'ADMIN', password: 'x', role: 'ADMIN' },
+    ])
+      expect((await request(app).post('/api/auth/login').send(body)).status).toBe(400);
+  });
+  it.each([
+    ['ADMIN', '/donations'],
+    ['ADMIN', '/dispensing/preview'],
+    ['ADMIN', '/dispensing/emergency'],
+    ['OPERATOR', '/dispensing/confirm'],
+    ['OPERATOR', `/donations/${randomUUID()}/release`],
+    ['OPERATOR', `/donations/${randomUUID()}/lab-results`],
+    ['LAB', '/donations'],
+    ['LAB', '/dispensing/emergency'],
+    ['LAB', '/users'],
+    ['DISPENSER', '/donations'],
+    ['DISPENSER', `/donations/${randomUUID()}/release`],
+    ['DISPENSER', '/catalog/products'],
+    ['RESEARCHER', '/donations'],
+    ['RESEARCHER', '/dispensing/emergency'],
+    ['RESEARCHER', '/records/export'],
+  ])('denies %s writing %s', async (role, path) => {
+    const response = await request(app)
+      .post(`/api${path}`)
+      .set('Authorization', `Bearer ${tokens[role]}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({});
+    expect(response.status).toBe(403);
+  });
+  it.each([
+    '/export',
+    '/records?dataset=donations',
+    '/components',
+    '/donations',
+    '/users',
+    '/catalog',
+  ])('gives a researcher no identifiable records at %s', async (path) => {
+    expect(
+      (await request(app).get(`/api${path}`).set('Authorization', `Bearer ${tokens.RESEARCHER}`))
+        .status,
+    ).toBe(403);
+  });
+  it('requires a new sign-in after a role change', async () => {
+    const users = await request(app)
+      .get('/api/users')
+      .set('Authorization', `Bearer ${tokens.ADMIN}`);
+    const target = users.body.find((u: { role: string }) => u.role === 'DISPENSER');
+    const changed = await request(app)
+      .post(`/api/users/${target.id}`)
+      .set('Authorization', `Bearer ${tokens.ADMIN}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ role: 'OPERATOR' });
+    expect(changed.status).toBe(200);
+    expect(
+      (await request(app).get('/api/inventory').set('Authorization', `Bearer ${tokens.DISPENSER}`))
+        .status,
+    ).toBe(401);
   });
 });

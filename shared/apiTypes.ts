@@ -15,6 +15,7 @@ export type DonationInput = {
   donationDate: string;
   donorId: string;
   donorFullName: string;
+  collectedAt?: string;
 };
 export type DispenseReceipt = {
   eventId: string;
@@ -37,6 +38,11 @@ export const RECORD_DATASETS = [
   'dispenseEvents',
   'dispenseEventUnits',
   'operationRequests',
+  'donations',
+  'bloodComponents',
+  'labResults',
+  'releaseDecisions',
+  'issuedComponents',
 ] as const;
 export type RecordDataset = (typeof RECORD_DATASETS)[number];
 export type RecordFilters = {

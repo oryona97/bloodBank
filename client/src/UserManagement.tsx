@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from './api.js';
+import { ROLES } from '../../shared/becsTypes.js';
 
 type User = {
   id: string;
   username: string;
   role: string;
   created_at: string;
+  active: boolean;
 };
 
 export function UserManagement() {
@@ -15,7 +17,7 @@ export function UserManagement() {
 
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [newRole, setNewRole] = useState('WORKER');
+  const [newRole, setNewRole] = useState('OPERATOR');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
   const [createSuccess, setCreateSuccess] = useState('');
@@ -51,7 +53,7 @@ export function UserManagement() {
       setCreateSuccess(`User ${newUsername} created successfully.`);
       setNewUsername('');
       setNewPassword('');
-      setNewRole('WORKER');
+      setNewRole('OPERATOR');
       fetchUsers();
     } catch (err) {
       setCreateError(
@@ -72,7 +74,7 @@ export function UserManagement() {
         <div>
           <span className="eyebrow">TOTAL USERS</span>
           <strong>{loading ? '—' : users.length}</strong>
-          <small>Active system accounts</small>
+          <small>Registered system accounts</small>
         </div>
       </div>
 
@@ -121,9 +123,9 @@ export function UserManagement() {
                 onChange={(e) => setNewRole(e.target.value)}
                 disabled={creating}
               >
-                <option value="ADMIN">Admin (Full Access)</option>
-                <option value="WORKER">Worker (Inventory Mgmt)</option>
-                <option value="RESEARCHER">Researcher (Read-only Data)</option>
+                {ROLES.map((role) => (
+                  <option key={role}>{role}</option>
+                ))}
               </select>
             </label>
             <div className="filter-actions" style={{ alignSelf: 'flex-end', paddingBottom: '2px' }}>
@@ -176,6 +178,7 @@ export function UserManagement() {
                   <th>Role</th>
                   <th>Created At</th>
                   <th>ID</th>
+                  <th>Access</th>
                 </tr>
               </thead>
               <tbody>
@@ -196,11 +199,58 @@ export function UserManagement() {
                     <td>
                       <code>{u.id.slice(0, 8)}</code>
                     </td>
+                    <td>
+                      <label>
+                        Role
+                        <select
+                          aria-label={`Role for ${u.username}`}
+                          value={u.role}
+                          disabled={creating}
+                          onChange={(e) => {
+                            setCreating(true);
+                            void api(
+                              `/users/${u.id}`,
+                              { role: e.target.value },
+                              crypto.randomUUID(),
+                            )
+                              .then(() => fetchUsers())
+                              .catch((err) =>
+                                setError(
+                                  err instanceof Error ? err.message : 'Access change failed.',
+                                ),
+                              )
+                              .finally(() => setCreating(false));
+                          }}
+                        >
+                          {u.role === 'WORKER' && <option>WORKER</option>}
+                          {ROLES.map((r) => (
+                            <option key={r}>{r}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        className="secondary-button"
+                        disabled={creating}
+                        onClick={() => {
+                          setCreating(true);
+                          void api(`/users/${u.id}`, { active: !u.active }, crypto.randomUUID())
+                            .then(() => fetchUsers())
+                            .catch((err) =>
+                              setError(
+                                err instanceof Error ? err.message : 'Access change failed.',
+                              ),
+                            )
+                            .finally(() => setCreating(false));
+                        }}
+                      >
+                        {u.active ? 'Disable' : 'Enable'} account
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', padding: '2rem' }}>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>
                       No users found.
                     </td>
                   </tr>
