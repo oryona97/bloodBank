@@ -9,14 +9,39 @@ import { api } from './api.js';
 import './records.css';
 
 const collections: Record<RecordDataset, { label: string; description: string; id: string }> = {
+  donations: {
+    label: 'Donation records',
+    description: 'Donation intake and laboratory states.',
+    id: 'donation_id',
+  },
+  bloodComponents: {
+    label: 'Blood components',
+    description: 'Products, expiry, source and storage records.',
+    id: 'component_id',
+  },
+  labResults: {
+    label: 'Laboratory results',
+    description: 'Immutable result revisions.',
+    id: 'result_id',
+  },
+  releaseDecisions: {
+    label: 'Release decisions',
+    description: 'Laboratory approvals and rejections.',
+    id: 'release_id',
+  },
+  issuedComponents: {
+    label: 'Issued components',
+    description: 'Components linked to dispensing events.',
+    id: 'component_id',
+  },
   auditLogs: {
     label: 'Audit logs',
     description: 'A chronological history of actions, outcomes, and record access.',
     id: 'id',
   },
   bloodUnits: {
-    label: 'Blood donations',
-    description: 'All donated units, including available and dispensed stock.',
+    label: 'Legacy blood units',
+    description: 'Preserved original records before the component model.',
     id: 'unit_id',
   },
   dispenseEvents: {
@@ -44,6 +69,11 @@ const readable = (value: unknown) =>
 const valueText = (value: unknown) =>
   typeof value === 'string' || typeof value === 'number' ? String(value) : '—';
 function recordTitle(record: StoredRecord, dataset: RecordDataset) {
+  if (dataset === 'donations') return `${valueText(record.initial_type)} donation`;
+  if (dataset === 'bloodComponents') return 'Blood component';
+  if (dataset === 'labResults') return `Laboratory result revision ${valueText(record.revision)}`;
+  if (dataset === 'releaseDecisions') return `${readable(record.decision)} release decision`;
+  if (dataset === 'issuedComponents') return 'Issued component';
   if (dataset === 'auditLogs') return readable(record.action);
   if (dataset === 'bloodUnits') return `${valueText(record.blood_type)} donation`;
   if (dataset === 'dispenseEvents') return `${readable(record.mode)} dispensing`;
@@ -440,7 +470,11 @@ export function RecordsDashboard({ role }: { role: string }) {
               <tbody>
                 {data.records.map((record) => {
                   const id = idOf(record);
-                  const date = record.created_at ?? record.issued_at;
+                  const date =
+                    record.created_at ??
+                    record.issued_at ??
+                    record.recorded_at ??
+                    record.approved_at;
                   const outcome = record.outcome ?? record.status;
                   return (
                     <Fragment key={id}>

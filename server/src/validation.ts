@@ -1,18 +1,29 @@
 import { z } from 'zod';
 import { BLOOD_TYPES, RECORD_DATASETS } from '../../shared/apiTypes.js';
+import { PRODUCT_TYPES } from './domain/components.js';
 export const bloodTypeSchema = z.enum(BLOOD_TYPES);
 export const requestSchema = z
-  .object({ recipientType: bloodTypeSchema, quantity: z.number().int().positive().max(1000000) })
+  .object({
+    productType: z.enum(PRODUCT_TYPES),
+    recipientType: bloodTypeSchema,
+    quantity: z.number().int().positive().max(1000),
+  })
   .strict();
 export const userSchema = z
   .object({
     username: z.string().trim().min(3).max(50),
     password: z.string().min(6).max(100),
-    role: z.enum(['ADMIN', 'WORKER', 'RESEARCHER']),
+    role: z.enum(['ADMIN', 'OPERATOR', 'LAB', 'DISPENSER', 'RESEARCHER']),
   })
   .strict();
 export const confirmSchema = requestSchema
   .extend({
+    componentIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(1000)
+      .refine((ids) => new Set(ids).size === ids.length, 'Each component must be distinct.'),
+    recipientReference: z.string().trim().min(3).max(120),
     lines: z
       .array(
         z
@@ -28,6 +39,13 @@ export const confirmSchema = requestSchema
   .strict();
 export const donationSchema = z
   .object({
+    collectedAt: z.iso
+      .datetime({ offset: true })
+      .refine(
+        (v) => new Date(v).getTime() <= Date.now(),
+        'Collection time cannot be in the future.',
+      )
+      .optional(),
     bloodType: bloodTypeSchema,
     donationDate: z
       .string()
@@ -53,7 +71,26 @@ export const donationSchema = z
       .regex(/^\d{9}$/, 'Enter a 9-digit donor ID, including leading zeros.'),
     donorFullName: z.string().trim().min(2, 'Enter the donor’s full name.').max(120),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ collectedAt, donationDate }) => {
+      if (!collectedAt) return true;
+      const parsed = new Date(collectedAt);
+      return (
+        Number.isFinite(parsed.getTime()) &&
+        new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Jerusalem',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(parsed) === donationDate
+      );
+    },
+    {
+      message: 'Collection time must match the donation date in Jerusalem.',
+      path: ['collectedAt'],
+    },
+  );
 export const requestKeySchema = z.string().uuid();
 const recordFilterFields = {
   dataset: z.enum(RECORD_DATASETS),

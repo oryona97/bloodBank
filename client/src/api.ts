@@ -19,6 +19,10 @@ export async function api<T>(path: string, body?: unknown, key?: string): Promis
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const result: unknown = await response.json();
-  if (!response.ok) throw new ApiError(result as ApiErrorBody, response.status);
+  if (!response.ok) {
+    if (response.status === 401 && path !== '/auth/login')
+      window.dispatchEvent(new Event('becs-session-expired'));
+    throw new ApiError(result as ApiErrorBody, response.status);
+  }
   return result as T;
 }

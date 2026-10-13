@@ -15,6 +15,41 @@ const datasets: Record<
     deidentifiedFrom?: string;
   }
 > = {
+  donations: {
+    from: 'donations r',
+    select: 'r.*,r.donation_date::text AS donation_date',
+    date: 'r.created_at',
+    id: 'r.donation_id',
+    order: 'r.created_at DESC,r.donation_id DESC',
+  },
+  bloodComponents: {
+    from: 'blood_components r',
+    select: 'r.*',
+    date: 'r.created_at',
+    id: 'r.component_id',
+    order: 'r.created_at DESC,r.component_id DESC',
+  },
+  labResults: {
+    from: 'lab_results r',
+    select: 'r.*',
+    date: 'r.recorded_at',
+    id: 'r.result_id',
+    order: 'r.recorded_at DESC,r.result_id DESC',
+  },
+  releaseDecisions: {
+    from: 'release_decisions r',
+    select: 'r.*',
+    date: 'r.approved_at',
+    id: 'r.release_id',
+    order: 'r.approved_at DESC,r.release_id DESC',
+  },
+  issuedComponents: {
+    from: 'dispense_event_components r JOIN dispense_events e USING(event_id)',
+    select: 'r.*,e.issued_at',
+    date: 'e.issued_at',
+    id: 'r.component_id',
+    order: 'e.issued_at DESC,r.component_id DESC',
+  },
   auditLogs: {
     from: 'audit_logs r',
     select: 'r.*',
