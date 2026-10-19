@@ -4,6 +4,7 @@ import { AppError } from '../errors.js';
 import type { AuditContext } from '../storage/auditRepository.js';
 import { writeAudit } from '../storage/auditRepository.js';
 import { mutate } from './inventoryService.js';
+import { calculateProfileExpiry } from '../domain/components.js';
 
 export function produceComponents(
   pool: Pool,
@@ -44,16 +45,18 @@ export function produceComponents(
           throw new AppError(409, 'STORAGE_REQUIRED', 'A suitable storage location is required.');
         const id = randomUUID();
         componentIds.push(id);
+        const expiresAt = calculateProfileExpiry(profile, donation.collected_at.toISOString());
         await client.query(
-          "INSERT INTO blood_components(component_id,donation_id,type_id,location_id,produced_at,expires_at,status) VALUES ($1,$2,$3,$4,clock_timestamp(),$5::timestamptz + $6::int * interval '24 hours',$7)",
+          'INSERT INTO blood_components(component_id,donation_id,type_id,location_id,produced_at,expires_at,status) VALUES ($1,$2,$3,$4,clock_timestamp(),$5,$6)',
           [
             id,
             donationId,
             profile.type_id,
             location.location_id,
-            donation.collected_at,
-            profile.expiry_days,
-            donation.lab_status === 'RELEASED' ? 'AVAILABLE' : 'QUARANTINED',
+            expiresAt,
+            donation.lab_status === 'RELEASED' && Date.parse(expiresAt) > Date.now()
+              ? 'AVAILABLE'
+              : 'QUARANTINED',
           ],
         );
       }
@@ -111,16 +114,18 @@ export function deriveCryo(pool: Pool, key: string, componentId: string, context
       if (!location) throw new AppError(409, 'STORAGE_REQUIRED', 'A suitable freezer is required.');
       const id = randomUUID();
       await client.query(
-        "INSERT INTO blood_components(component_id,donation_id,type_id,source_component_id,location_id,produced_at,expires_at,status) VALUES ($1,$2,$3,$4,$5,clock_timestamp(),LEAST($6::timestamptz,$7::timestamptz+$8::int*interval '24 hours'),$9)",
+        'INSERT INTO blood_components(component_id,donation_id,type_id,source_component_id,location_id,produced_at,expires_at,status) VALUES ($1,$2,$3,$4,$5,clock_timestamp(),$6,$7)',
         [
           id,
           source.donation_id,
           profile.type_id,
           componentId,
           location.location_id,
-          source.expires_at,
-          source.collected_at,
-          profile.expiry_days,
+          calculateProfileExpiry(
+            profile,
+            source.collected_at.toISOString(),
+            source.expires_at.toISOString(),
+          ),
           source.lab_status === 'RELEASED' ? 'AVAILABLE' : 'QUARANTINED',
         ],
       );
@@ -235,13 +240,12 @@ export function completeLegacyDetails(
         [component.donation_id, input.collectedAt],
       );
       await client.query(
-        "UPDATE blood_components SET type_id=$2,location_id=$3,expires_at=$4::timestamptz+$5::int*interval '24 hours' WHERE component_id=$1",
+        'UPDATE blood_components SET type_id=$2,location_id=$3,expires_at=$4 WHERE component_id=$1',
         [
           componentId,
           profile.type_id,
           location.location_id,
-          input.collectedAt,
-          profile.expiry_days,
+          calculateProfileExpiry(profile, input.collectedAt),
         ],
       );
       await writeAudit(

@@ -14,7 +14,37 @@ export async function catalog(pool: Pool) {
       'SELECT code,panel_version,result_kind,required FROM lab_test_types ORDER BY panel_version,code',
     )
   ).rows;
-  return { products, locations, tests };
+  const panels = (await pool.query('SELECT * FROM lab_panels ORDER BY panel_version DESC')).rows;
+  return { products, locations, tests, panels, activePanelVersion: panels[0].panel_version };
+}
+export type PanelInput = {
+  reason: string;
+  tests: { code: string; resultKind: 'TYPING' | 'SCREENING'; required: true }[];
+};
+export function publishPanel(pool: Pool, key: string, input: PanelInput, context: AuditContext) {
+  return mutate(
+    pool,
+    key,
+    'lab-panel-published',
+    input,
+    async (client) => {
+      const version = (
+        await client.query('SELECT COALESCE(max(panel_version),0)+1 AS version FROM lab_panels')
+      ).rows[0].version as number;
+      await client.query(
+        'INSERT INTO lab_panels(panel_version,published_by,reason) VALUES ($1,$2,$3)',
+        [version, context.userId, input.reason],
+      );
+      for (const test of input.tests)
+        await client.query(
+          'INSERT INTO lab_test_types(code,panel_version,result_kind,required) VALUES ($1,$2,$3,$4)',
+          [test.code, version, test.resultKind, test.required],
+        );
+      await writeAudit(client, 'LAB_PANEL_PUBLISHED', { panelVersion: version, ...input }, context);
+      return { panelVersion: version };
+    },
+    context,
+  );
 }
 export function reviseProduct(
   pool: Pool,

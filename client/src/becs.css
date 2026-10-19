@@ -11,7 +11,7 @@
   position: sticky;
   top: 0;
   height: 100vh;
-  padding: 32px 20px;
+  padding: 32px 20px 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid #283345;
@@ -52,18 +52,16 @@
   color: #d0f4e3;
 }
 .becs-account {
-  margin-top: auto;
+  margin: auto -20px 0;
   display: grid;
   gap: 6px;
-  padding-top: 28px;
+  padding: 24px 20px;
+  border-top: 1px solid #334b68;
+  background: #1d304a;
 }
-.becs-account span,
-.becs-demo {
+.becs-account span {
   font-size: 12px;
-  color: #91a3b8;
-}
-.becs-demo {
-  line-height: 1.6;
+  color: #b7c6d9;
 }
 .becs-main {
   width: calc(100% - 240px);
@@ -132,7 +130,8 @@
 .becs-form select,
 .becs-toolbar input,
 .becs-toolbar select,
-.becs-field select {
+.becs-field select,
+.becs-field input {
   width: 100%;
   background: #0b1524;
   border: 1px solid #41516a;
@@ -378,7 +377,7 @@
     width: 100%;
     height: auto;
     position: static;
-    padding: 20px;
+    padding: 20px 20px 0;
   }
   .becs-sidebar nav {
     display: flex;
@@ -396,11 +395,9 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    padding-top: 16px;
+    margin: 20px -20px 0;
+    padding: 16px 20px;
     gap: 12px;
-  }
-  .becs-demo {
-    margin-bottom: 0;
   }
   .becs-main {
     width: 100%;

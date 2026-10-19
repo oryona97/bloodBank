@@ -12,7 +12,8 @@ See the [approved Hebrew proposal](docs/proposal/BECS-project-proposal.he.docx),
 - PRBC allocation preserves exact-type/common-alternative/O−-last priorities. FEFO applies within type priority. Plasma uses ABO plasma compatibility, ignoring Rh. Platelets require exact ABO/Rh; Cryo requires exact ABO. The latter two are restricted simulation policies.
 - Routine issue requires product, recipient type, quantity and synthetic recipient reference. Emergency issue takes a requested quantity of eligible PRBC O−. Both recheck clearance, expiry, storage and exact selection under the inventory lock. Shortages issue nothing. Retries do not repeat changes.
 - Inventory shows product/type counts and status totals. Components support filters, pagination, seven-day expiry reports, discard with reason and verified legacy-detail completion.
-- Administrators can revise expiry profiles without changing existing components, manage account roles/status, search records and export JSON. Storage classes and the laboratory panel are fixed versioned catalog entries. Sensors and measured cold-chain control are excluded.
+- Administrators can revise expiry profiles without changing existing components, publish immutable laboratory panels for future donations, manage accounts, search records and export JSON. Panels retain blood typing and the four baseline screenings; additional required screening tests can be added. Each donation retains its original panel. Storage classes and product expiry bases follow the approved simulation policies.
+- Collection timestamps are mandatory for new donations. Approvals retain a reason (a standard review statement is used when older clients omit it). Inventory includes every status by product and blood type. Donation work lists open a component card, and the upcoming-expiry report excludes expired, issued, processed and discarded stock.
 
 ## Run the local demo
 
@@ -39,11 +40,21 @@ Roles do not inherit one another. Admin cannot approve laboratory results or dis
 
 The repeatable seed creates 41 synthetic donations and clears their components. In an empty new model it produces 41 PRBC, 33 FFP, 16 Platelets and 8 Cryo available components, plus 8 consumed FFP sources. Repeating it does not duplicate records or replenish issued/discarded stock. Legacy records retain their historical state.
 
+To prepare fresh demonstration stock after the original donations age, use a **new named batch**:
+
+```sh
+docker compose exec -T app node dist/server/server/scripts/seed.js --batch 2026-10-19
+```
+
+Locally, use `npm run db:seed -- --batch 2026-10-19`. Reusing a label returns the original receipts without adding stock or changing expiry dates. A new label creates 41 new synthetic donors/donations with current collection times and completes their retained laboratory panel. It preserves earlier donors, components, decisions and issuance history. The original command without `--batch` continues to address only the original batch.
+
 In explicit demo mode, an omitted `JWT_SECRET` generates a random process secret; restart requires signing in again. Outside demo mode, provide a random secret of at least 32 characters and explicit `ADMIN_USERNAME`/`ADMIN_PASSWORD` for initial setup. Default accounts and authentication bypass are absent outside demo mode. Existing accounts are preserved.
 
 ## Upgrade an existing database
 
 Migrations 005–010 preserve original IDs, dates, creation times, dispensing links and audit. Legacy available units become quarantined `LEGACY` components with unknown product, collection time, storage and expiry; issued units remain issued. No results or approval are invented. Broad `WORKER` accounts are disabled; an administrator can assign a new explicit role and enable them.
+
+Migrations 011–012 add explicit product expiry bases and published laboratory panels while retaining existing expiry values, results, decisions and panel assignments. New intake selects its panel version explicitly.
 
 An operator can use **Complete verified details** on an unissued legacy component to record a documented product, collection timestamp matching its original date, and verification reason. Its ID is retained and it stays quarantined. Laboratory work and explicit approval remain mandatory. Cryo requires a documented FFP source and its separate processing workflow.
 
@@ -87,7 +98,7 @@ npm run build
 npm run format:check
 ```
 
-The user confirmed TDD boundaries at exported domain functions and HTTP endpoints with real PostgreSQL, plus manual browser checks. There are 81 domain tests and 74 integration tests covering compatibility/FEFO, quarantine, panels, corrections, confirmation-time expiry, storage, source consumption, retries, concurrent issue, role denial, disabled/stale sessions, migration preservation, audit rollback and consistent exports. Tests create/drop isolated schemas only, in a distinct database ending in `_test`.
+The user confirmed TDD boundaries at exported domain functions and HTTP endpoints with real PostgreSQL, plus manual browser checks. There are 98 domain tests and 110 integration tests covering the U01–U17 and I01–I17 acceptance cases, including full component compatibility matrices, FEFO ties, pending/indeterminate results, typing corrections, quarantine, source consumption, lock-time expiry, laboratory/issue concurrency, issue-link and audit rollback, immutable history, panel versions, every denied role/route combination, expired sessions, migrations and exports. Tests create/drop isolated schemas only, in a distinct database ending in `_test`. See the [current verification report](docs/verification/2026-10-19.md) for the acceptance mapping and local runtime checks.
 
 GitHub Actions runs formatting, tests and build on push/PR. Local verification is recorded in [IMPLEMENTATION.md](docs/proposal/IMPLEMENTATION.md). Remote CI can be verified when the changes are published.
 
@@ -124,6 +135,7 @@ Except `/api/health` and `/api/auth/login`, endpoints require `Authorization: Be
 | `POST /api/activities/cancel`                                     | Dispenser                       | Audited cancellation                                 |
 | `GET /api/catalog`                                                | Operator, Lab, Dispenser, Admin | Profiles, locations and panel                        |
 | `POST /api/catalog/products`                                      | Admin                           | Append expiry-policy version                         |
+| `POST /api/catalog/panels`                                        | Admin                           | Publish required tests for future donations          |
 | `GET/POST /api/users`, `POST /api/users/:id`                      | Admin                           | View/create; role/status changes                     |
 | `GET /api/records`, `POST /api/records/export`, `GET /api/export` | Admin                           | Audited records and exports                          |
 

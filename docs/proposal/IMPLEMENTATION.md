@@ -1,5 +1,7 @@
 # Approved BECS implementation and validation
 
+The latest implementation and validation are in [the 2026-10-19 report](../verification/2026-10-19.md), on branch `feat/becsExpansion`. It supersedes the historical counts and fixed-panel limitation below. The original approved proposal is unchanged.
+
 The professor approved `BECS-project-proposal.he.docx`. The user authorized implementation on 2026-10-12. Work is on branch `codex/becs-approved-expansion`. The approved document is preserved.
 
 ## Confirmed TDD boundaries

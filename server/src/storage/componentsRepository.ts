@@ -31,7 +31,7 @@ export async function listComponents(pool: Pool, filters: ComponentFilters = {},
     WHERE ($1::uuid IS NULL OR c.donation_id=$1))
     SELECT *,count(*) OVER()::int AS total FROM records WHERE
     ($3::text IS NULL OR "productType"=$3) AND ($4::text IS NULL OR "bloodType"=$4) AND ($5::text IS NULL OR status=$5)
-    AND ($6::timestamptz IS NULL OR "expiresAt" <= $6)
+    AND ($6::timestamptz IS NULL OR ("expiresAt" > $2 AND "expiresAt" <= $6 AND status IN ('AVAILABLE','QUARANTINED') AND "labStatus" <> 'REJECTED'))
     AND (strpos("componentId"::text,$7)>0 OR strpos("donationId"::text,$7)>0)
     ORDER BY "createdAt","componentId" LIMIT 100 OFFSET $8`,
     [

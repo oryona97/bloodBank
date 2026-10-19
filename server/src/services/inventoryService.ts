@@ -74,13 +74,13 @@ export function registerDonation(
         [randomUUID(), input.donorId, input.donorFullName],
       );
       await client.query(
-        "INSERT INTO donations(donation_id,donor_id,donation_date,collected_at,initial_type) VALUES ($1,$2,$3,COALESCE($5::timestamptz,$3::date::timestamp AT TIME ZONE 'Asia/Jerusalem'),$4)",
+        'INSERT INTO donations(donation_id,donor_id,donation_date,collected_at,initial_type,required_panel_version) VALUES ($1,$2,$3,$5,$4,(SELECT max(panel_version) FROM lab_panels))',
         [
           donationId,
           donor.rows[0]!.donor_id,
           input.donationDate,
           input.bloodType,
-          input.collectedAt ?? null,
+          input.collectedAt,
         ],
       );
       await writeAudit(

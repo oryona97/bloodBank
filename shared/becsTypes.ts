@@ -1,6 +1,16 @@
 import type { BloodType, Inventory, AllocationLine } from './apiTypes.js';
 export const PRODUCTS = ['PRBC', 'FFP', 'Platelets', 'Cryoprecipitate'] as const;
 export type Product = (typeof PRODUCTS)[number];
+export const DEFAULT_RELEASE_REASON = 'All required results reviewed and blood typing verified.';
+export const COMPONENT_STATUSES = [
+  'AVAILABLE',
+  'QUARANTINED',
+  'EXPIRED',
+  'DISPENSED',
+  'PROCESSED',
+  'DISCARDED',
+] as const;
+export type ComponentStatus = (typeof COMPONENT_STATUSES)[number];
 export const ROLES = ['ADMIN', 'OPERATOR', 'LAB', 'DISPENSER', 'RESEARCHER'] as const;
 export type Role = (typeof ROLES)[number];
 export type SessionUser = { username: string; role: string };
@@ -24,6 +34,7 @@ export type ComponentRecord = {
   status: string;
   labStatus: string;
   expiresAt: string | null;
+  producedAt: string | null;
   policyVersion: number;
   sourceComponentId: string | null;
   storageLocation: string | null;
@@ -33,6 +44,7 @@ export type BecsInventory = {
   inventory: Inventory;
   products: Record<Product, Inventory>;
   statusCounts: Record<Product | 'LEGACY', Record<string, number>>;
+  statusByBloodType: Record<Product | 'LEGACY', Record<BloodType, Record<ComponentStatus, number>>>;
 };
 export type BecsAllocation = {
   productType: Product;
@@ -54,10 +66,18 @@ export type ResultRecord = {
   reason: string | null;
 };
 export type Catalogue = {
+  activePanelVersion: number;
+  panels: {
+    panel_version: number;
+    reason: string;
+    published_at: string;
+    published_by: string | null;
+  }[];
   products: {
     code: Product;
     policy_version: number;
     expiry_days: number;
+    expiry_basis: 'COLLECTION' | 'SOURCE_EXPIRY';
     storage_class: string;
     min_c: number | null;
     max_c: number | null;

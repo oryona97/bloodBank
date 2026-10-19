@@ -92,6 +92,16 @@
   background: rgba(0, 0, 0, 0.2);
   font-size: 13px;
 }
+.record-filters select {
+  border-color: #41516a;
+  background: #0b1524;
+  color: #f0f4fa;
+  color-scheme: dark;
+}
+.record-filters select option {
+  background: #0b1524;
+  color: #f0f4fa;
+}
 .record-filters input:focus-visible,
 .record-filters select:focus-visible {
   outline: 2px solid #77a994;

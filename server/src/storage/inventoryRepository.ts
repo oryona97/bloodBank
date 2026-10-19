@@ -1,10 +1,12 @@
 import type { Pool, PoolClient } from 'pg';
 import {
   emptyInventory,
+  BLOOD_TYPES,
   type BloodType,
   type Inventory,
   type Activity,
 } from '../../../shared/apiTypes.js';
+import { PRODUCTS, COMPONENT_STATUSES, type BecsInventory } from '../../../shared/becsTypes.js';
 type Connection = Pool | PoolClient;
 export async function getProductInventory(db: Connection, now = new Date()) {
   const rows = (
@@ -27,12 +29,26 @@ export async function getProductInventory(db: Connection, now = new Date()) {
       { AVAILABLE: 0, QUARANTINED: 0, EXPIRED: 0, DISPENSED: 0, PROCESSED: 0, DISCARDED: 0 },
     ]),
   );
+  const statusByBloodType = Object.fromEntries(
+    [...PRODUCTS, 'LEGACY'].map((product) => [
+      product,
+      Object.fromEntries(
+        BLOOD_TYPES.map((type) => [
+          type,
+          Object.fromEntries(COMPONENT_STATUSES.map((status) => [status, 0])),
+        ]),
+      ),
+    ]),
+  ) as BecsInventory['statusByBloodType'];
   for (const row of rows) {
     statusCounts[row.code]![row.status] = (statusCounts[row.code]![row.status] ?? 0) + row.count;
+    statusByBloodType[row.code as keyof typeof statusByBloodType][row.blood_type as BloodType][
+      row.status as (typeof COMPONENT_STATUSES)[number]
+    ] += row.count;
     if (row.status === 'AVAILABLE' && products[row.code])
       products[row.code]![row.blood_type as BloodType] += row.count;
   }
-  return { inventory: products.PRBC!, products, statusCounts };
+  return { inventory: products.PRBC!, products, statusCounts, statusByBloodType };
 }
 export async function getInventory(db: Connection, now = new Date()): Promise<Inventory> {
   return (await getProductInventory(db, now)).inventory;

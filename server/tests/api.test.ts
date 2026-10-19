@@ -129,6 +129,13 @@ afterAll(async () => {
 });
 
 describe('Approved workflow regressions at the HTTP seam', () => {
+  it('requires an explicit collection timestamp without creating an inferred donation', async () => {
+    const { collectedAt: _omitted, ...body } = intakeBody();
+    const before = (await get('ADMIN', '/records?dataset=donations')).body.total;
+    const response = await post('OPERATOR', '/donations', body);
+    expect(response.status).toBe(400);
+    expect((await get('ADMIN', '/records?dataset=donations')).body.total).toBe(before);
+  });
   it('rejects invalid donor data and impossible calendar dates', async () => {
     const base = intakeBody();
     for (const invalid of [
@@ -201,6 +208,14 @@ describe('Approved workflow regressions at the HTTP seam', () => {
     expect(retry.body).toEqual(first.body);
     expect((await post('OPERATOR', '/donations', { ...body, bloodType: 'AB-' }, key)).status).toBe(
       409,
+    );
+    const audit = await get('ADMIN', `/records?dataset=auditLogs&search=${key}`);
+    expect(audit.body.records).toContainEqual(
+      expect.objectContaining({
+        outcome: 'REJECTED',
+        request_key: key,
+        details: expect.objectContaining({ code: 'REQUEST_KEY_REUSED' }),
+      }),
     );
   });
   it('deduplicates simultaneous stock requests with the same key', async () => {

@@ -1,0 +1,94 @@
+.user-management .user-create-form {
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 26px;
+}
+
+.user-create-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(170px, 0.75fr) auto;
+  align-items: end;
+  gap: 16px;
+}
+
+.user-create-fields label {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.user-management .user-create-fields input,
+.user-management .user-create-fields select,
+.user-management .user-create-fields > button {
+  height: 44px;
+  min-height: 44px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.user-management .user-create-fields input,
+.user-management .user-create-fields select {
+  padding: 10px 12px;
+  font-weight: 400;
+}
+
+.user-access-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.user-role-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #b7c6d9;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.user-management .user-role-select {
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #41516a;
+  border-radius: 8px;
+  background: #0b1524;
+  color: #f0f4fa;
+  color-scheme: dark;
+}
+
+.user-role-field .user-role-select {
+  width: 170px;
+  font-weight: 400;
+}
+
+.user-role-select option {
+  background: #0b1524;
+  color: #f0f4fa;
+}
+
+.user-role-select:focus-visible {
+  outline: 3px solid #85d7ba;
+  outline-offset: 3px;
+}
+
+.user-role-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.user-management .user-access-actions > button {
+  min-height: 44px;
+}
+
+@media (max-width: 1100px) {
+  .user-create-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .user-create-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

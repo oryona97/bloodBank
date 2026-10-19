@@ -98,6 +98,70 @@ afterAll(async () => {
 });
 
 describe('Approved BECS workflows', () => {
+  it('limits the upcoming-expiry report to future usable stock and keeps expired stock separately searchable', async () => {
+    const oldId = await intake('AB+', 8);
+    const freshId = await intake('AB+', 1);
+    for (const id of [oldId, freshId])
+      await post('OPERATOR', `/donations/${id}/components`, { template: 'PRBC_FFP_PLATELETS' });
+    const horizon = encodeURIComponent(new Date(Date.now() + 7 * 86400000).toISOString());
+    expect(
+      (await get('OPERATOR', `/components?donationId=${oldId}&expiresBefore=${horizon}`)).body
+        .components,
+    ).toEqual([]);
+    const fresh = await get(
+      'OPERATOR',
+      `/components?donationId=${freshId}&expiresBefore=${horizon}`,
+    );
+    expect(fresh.body.components).toEqual([
+      expect.objectContaining({ productType: 'Platelets', status: 'QUARANTINED' }),
+    ]);
+    await post('OPERATOR', `/components/${fresh.body.components[0].componentId}/discard`, {
+      reason: 'Synthetic damaged bag',
+    });
+    expect(
+      (await get('OPERATOR', `/components?donationId=${freshId}&expiresBefore=${horizon}`)).body
+        .components,
+    ).toEqual([]);
+    expect(
+      (await get('OPERATOR', `/components?donationId=${oldId}&status=EXPIRED`)).body.components,
+    ).toHaveLength(1);
+  });
+  it('reports every component status separately by product and blood type without individual researcher records', async () => {
+    const before = (await get('RESEARCHER', '/inventory')).body;
+    const id = await intake('B+');
+    await post('OPERATOR', `/donations/${id}/components`, { template: 'PRBC_FFP' });
+    const response = await get('RESEARCHER', '/inventory');
+    expect(response.body.statusByBloodType?.PRBC?.['B+']?.QUARANTINED).toBe(
+      (before.statusByBloodType?.PRBC?.['B+']?.QUARANTINED ?? 0) + 1,
+    );
+    expect(response.body.statusByBloodType.PRBC['A+']).toEqual(before.statusByBloodType.PRBC['A+']);
+    expect(response.body.activity).toEqual([]);
+    expect(JSON.stringify(response.body)).not.toContain(id);
+  });
+  it('retains the approval reason, approver and exact result references in records and export', async () => {
+    const id = await intake();
+    expect((await clear(id)).status).toBe(200);
+    const reason = 'Required panel reviewed and blood typing verified';
+    const response = await post('LAB', `/donations/${id}/release`, { decision: 'APPROVE', reason });
+    expect(response.status).toBe(200);
+    const records = await get(
+      'ADMIN',
+      `/records?dataset=releaseDecisions&search=${response.body.releaseId}`,
+    );
+    expect(records.body.records[0]).toMatchObject({
+      reason,
+      approved_by: userIds.LAB,
+      result_version_refs: expect.any(Array),
+    });
+    const history = await get('LAB', `/donations/${id}/lab-results`);
+    expect(records.body.records[0].result_version_refs.sort()).toEqual(
+      history.body.results.map((r: { resultId: string }) => r.resultId).sort(),
+    );
+    const exported = await get('ADMIN', '/export');
+    expect(exported.body.releaseDecisions).toContainEqual(
+      expect.objectContaining({ release_id: response.body.releaseId, reason }),
+    );
+  });
   it('audits laboratory result-history access with its donation and actor', async () => {
     const id = await intake();
     expect((await get('LAB', `/donations/${id}/lab-results`)).status).toBe(200);
@@ -152,6 +216,7 @@ describe('Approved BECS workflows', () => {
     const receipt = await post('OPERATOR', '/donations', {
       bloodType: 'O-',
       donationDate: '2026-10-01',
+      collectedAt: '2026-10-01T09:00:00Z',
       donorId: '000000018',
       donorFullName: 'Synthetic Donor',
     });
@@ -383,6 +448,11 @@ describe('Approved BECS workflows', () => {
     await post('OPERATOR', `/donations/${id}/components`, { template: 'PRBC_FFP' });
     await clear(id);
     const response = await get('ADMIN', '/export');
+    expect(
+      response.body.auditLogs
+        .filter((r: { action: string }) => r.action === 'RECORDS_EXPORTED')
+        .at(-1).details.version,
+    ).toBe(response.body.formatVersion);
     expect(response.body.donations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ donation_id: id, lab_status: 'RELEASED' }),
@@ -555,6 +625,33 @@ describe('Approved BECS workflows', () => {
       version: before.policyVersion,
     });
     const catalogue = await get('ADMIN', '/catalog');
+    expect(
+      catalogue.body.products.find((p: { code: string }) => p.code === 'PRBC').expiry_basis,
+    ).toBe('COLLECTION');
+    expect(
+      catalogue.body.products.find((p: { code: string }) => p.code === 'Cryoprecipitate')
+        .expiry_basis,
+    ).toBe('SOURCE_EXPIRY');
+    const fresh = await post('OPERATOR', '/donations', {
+      bloodType: 'A+',
+      donationDate: '2026-10-01',
+      collectedAt: '2026-10-01T09:00:00Z',
+      donorId: '000000018',
+      donorFullName: 'Synthetic Profile Donor',
+    });
+    expect(
+      (
+        await post('OPERATOR', `/donations/${fresh.body.donationId}/components`, {
+          template: 'PRBC_FFP',
+        })
+      ).status,
+    ).toBe(201);
+    const produced = (await get('OPERATOR', `/components?donationId=${fresh.body.donationId}`)).body
+      .components;
+    expect(produced.find((c: { productType: string }) => c.productType === 'PRBC')).toMatchObject({
+      policyVersion: 2,
+      expiresAt: '2026-11-05T09:00:00.000Z',
+    });
     expect(catalogue.body.products).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: 'PRBC', policy_version: 2, expiry_days: 35 }),
@@ -605,5 +702,57 @@ describe('Approved BECS workflows', () => {
       recipientReference: 'DEMO-LARGE-REQUEST',
     });
     expect(response.status).toBe(409);
+  });
+  it('publishes a new panel for new donations while preserving the previous donation requirements', async () => {
+    const oldId = await intake('B-');
+    const key = randomUUID();
+    const input = {
+      reason: 'Add an extra synthetic screening requirement',
+      tests: [
+        { code: 'ABO_RH', resultKind: 'TYPING', required: true },
+        ...['HIV', 'HBV', 'HCV', 'SYPHILIS', 'DEMO_SCREEN'].map((code) => ({
+          code,
+          resultKind: 'SCREENING',
+          required: true,
+        })),
+      ],
+    };
+    const published = await post('ADMIN', '/catalog/panels', input, key);
+    expect(published.status).toBe(201);
+    expect((await post('ADMIN', '/catalog/panels', input, key)).body).toEqual(published.body);
+    const newId = await intake('B-');
+    expect((await get('LAB', `/donations?search=${oldId}`)).body.donations[0].panelVersion).toBe(1);
+    expect((await get('LAB', `/donations?search=${newId}`)).body.donations[0].panelVersion).toBe(2);
+    expect((await clear(oldId, 'B-')).status).toBe(200);
+    expect((await clear(newId, 'B-')).status).toBe(409);
+    expect(
+      (
+        await post('LAB', `/donations/${newId}/lab-results`, {
+          testCode: 'DEMO_SCREEN',
+          value: 'NEGATIVE',
+          performedAt: new Date().toISOString(),
+        })
+      ).status,
+    ).toBe(201);
+    expect((await post('LAB', `/donations/${newId}/release`, { decision: 'APPROVE' })).status).toBe(
+      200,
+    );
+    const catalogue = await get('LAB', '/catalog');
+    expect(catalogue.body.activePanelVersion).toBe(2);
+    expect(catalogue.body.panels).toContainEqual(
+      expect.objectContaining({
+        panel_version: 2,
+        reason: input.reason,
+        published_by: userIds.ADMIN,
+      }),
+    );
+    expect(
+      (
+        await post('ADMIN', '/catalog/panels', {
+          reason: 'Cannot remove baseline tests',
+          tests: [{ code: 'HIV', resultKind: 'SCREENING', required: true }],
+        })
+      ).status,
+    ).toBe(400);
   });
 });

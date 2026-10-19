@@ -19,11 +19,13 @@ See the [proposal](docs/proposal/BECS-project-proposal.he.docx), [implementation
 - [x] Add work queues, catalogue, expiry filters, discard, legacy completion and user controls.
 - [x] Extend audit/exports, atomic mutation, idempotency and concurrency safeguards.
 - [x] Provide repeatable synthetic seed and explicit demo accounts.
-- [x] Verify 81 domain tests, 74 PostgreSQL tests and the production build.
+- [x] Verify 98 domain tests, 110 PostgreSQL tests and the production build.
 - [x] Complete browser validation and documentation checks; results recorded in IMPLEMENTATION.md.
 
 Excluded: ISBT identifiers/barcodes/lots, sensors, clinical crossmatch/reservations, full recall/lookback and clinical patient records. Policies are educational simulation assumptions.
 
 ## Historical baseline
+
+The 2026-10-19 approved-plan audit corrections include mandatory collection time, approval reasons, product/type/status inventory, correct expiry reporting, donation component cards, explicit expiry bases, published laboratory panels, export audit consistency, missing U/I tests and named synthetic refresh batches. See [current verification](docs/verification/2026-10-19.md). The [audit](docs/reviews/approved-plan-audit.he.md) records the earlier findings.
 
 The first assignment implemented intake, routine allocation, emergency dispensing, PostgreSQL audit and JSON export. Its 74 allocation tests were retained. Immediate availability, unlimited storage life, the broad Worker role and dispense-all emergency behavior were replaced by the approved requirements. Original screenshots remain historical materials under `docs/submission/`.
