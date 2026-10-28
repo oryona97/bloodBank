@@ -44,8 +44,7 @@ export const donationSchema = z
       .refine(
         (v) => new Date(v).getTime() <= Date.now(),
         'Collection time cannot be in the future.',
-      )
-      .optional(),
+      ),
     bloodType: bloodTypeSchema,
     donationDate: z
       .string()
@@ -74,7 +73,6 @@ export const donationSchema = z
   .strict()
   .refine(
     ({ collectedAt, donationDate }) => {
-      if (!collectedAt) return true;
       const parsed = new Date(collectedAt);
       return (
         Number.isFinite(parsed.getTime()) &&

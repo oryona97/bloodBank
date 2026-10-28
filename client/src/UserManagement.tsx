@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from './api.js';
 import { ROLES } from '../../shared/becsTypes.js';
+import './user-management.css';
 
 type User = {
   id: string;
@@ -69,7 +70,7 @@ export function UserManagement() {
   };
 
   return (
-    <section className="records-dashboard" aria-label="User Management">
+    <section className="records-dashboard user-management" aria-label="User Management">
       <div className="records-summary">
         <div>
           <span className="eyebrow">TOTAL USERS</span>
@@ -86,12 +87,8 @@ export function UserManagement() {
           </div>
         </div>
 
-        <form
-          className="record-filters"
-          onSubmit={handleCreateUser}
-          style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
-        >
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+        <form className="record-filters user-create-form" onSubmit={handleCreateUser}>
+          <div className="user-create-fields">
             <label>
               Username
               <input
@@ -119,6 +116,7 @@ export function UserManagement() {
             <label>
               Role
               <select
+                className="user-role-select"
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
                 disabled={creating}
@@ -128,11 +126,9 @@ export function UserManagement() {
                 ))}
               </select>
             </label>
-            <div className="filter-actions" style={{ alignSelf: 'flex-end', paddingBottom: '2px' }}>
-              <button className="primary-button" type="submit" disabled={creating}>
-                {creating ? 'Creating...' : 'Create User'}
-              </button>
-            </div>
+            <button className="primary-button" type="submit" disabled={creating}>
+              {creating ? 'Creating...' : 'Create User'}
+            </button>
           </div>
 
           {createError && (
@@ -200,19 +196,42 @@ export function UserManagement() {
                       <code>{u.id.slice(0, 8)}</code>
                     </td>
                     <td>
-                      <label>
-                        Role
-                        <select
-                          aria-label={`Role for ${u.username}`}
-                          value={u.role}
+                      <div className="user-access-actions">
+                        <label className="user-role-field">
+                          Role
+                          <select
+                            className="user-role-select"
+                            aria-label={`Role for ${u.username}`}
+                            value={u.role}
+                            disabled={creating}
+                            onChange={(e) => {
+                              setCreating(true);
+                              void api(
+                                `/users/${u.id}`,
+                                { role: e.target.value },
+                                crypto.randomUUID(),
+                              )
+                                .then(() => fetchUsers())
+                                .catch((err) =>
+                                  setError(
+                                    err instanceof Error ? err.message : 'Access change failed.',
+                                  ),
+                                )
+                                .finally(() => setCreating(false));
+                            }}
+                          >
+                            {u.role === 'WORKER' && <option>WORKER</option>}
+                            {ROLES.map((r) => (
+                              <option key={r}>{r}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          className="secondary-button"
                           disabled={creating}
-                          onChange={(e) => {
+                          onClick={() => {
                             setCreating(true);
-                            void api(
-                              `/users/${u.id}`,
-                              { role: e.target.value },
-                              crypto.randomUUID(),
-                            )
+                            void api(`/users/${u.id}`, { active: !u.active }, crypto.randomUUID())
                               .then(() => fetchUsers())
                               .catch((err) =>
                                 setError(
@@ -222,29 +241,9 @@ export function UserManagement() {
                               .finally(() => setCreating(false));
                           }}
                         >
-                          {u.role === 'WORKER' && <option>WORKER</option>}
-                          {ROLES.map((r) => (
-                            <option key={r}>{r}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        className="secondary-button"
-                        disabled={creating}
-                        onClick={() => {
-                          setCreating(true);
-                          void api(`/users/${u.id}`, { active: !u.active }, crypto.randomUUID())
-                            .then(() => fetchUsers())
-                            .catch((err) =>
-                              setError(
-                                err instanceof Error ? err.message : 'Access change failed.',
-                              ),
-                            )
-                            .finally(() => setCreating(false));
-                        }}
-                      >
-                        {u.active ? 'Disable' : 'Enable'} account
-                      </button>
+                          {u.active ? 'Disable' : 'Enable'} account
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

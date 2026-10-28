@@ -2,6 +2,8 @@
 
 React/TypeScript screens call an Express HTTP API. The server owns validation, role checks, compatibility, selection and PostgreSQL writes. Browser storage holds the session; stock, history and retry receipts persist in PostgreSQL.
 
+Product profiles include an explicit product-specific `expiry_basis` (COLLECTION or SOURCE_EXPIRY), used by the expiry calculation. `lab_panels` records immutable publication metadata; both `donations.required_panel_version` and `lab_test_types.panel_version` reference it. Publishing and intake share the inventory lock, so a donation retains the latest complete published panel. Earlier donations keep their original requirements and result references.
+
 ```mermaid
 flowchart LR
   UI[Role-specific React screens] --> API[Authenticated Express API]
@@ -47,6 +49,9 @@ erDiagram
   lab_test_types ||--o{ lab_results : panel_test
   lab_results o|--o| lab_results : replaces_revision
   donations ||--o{ release_decisions : clearance_history
+  lab_panels ||--o{ donations : required_panel
+  lab_panels ||--|{ lab_test_types : contains
+  users ||--o{ lab_panels : published_by
   users ||--o{ lab_results : recorded_by
   users ||--o{ release_decisions : approved_by
   users ||--o{ dispense_events : issued_by
@@ -83,6 +88,7 @@ erDiagram
     text code "unique with policy_version"
     int policy_version
     int expiry_days
+    text expiry_basis
     text storage_class
     numeric min_c
     numeric max_c
@@ -99,6 +105,12 @@ erDiagram
     int panel_version
     text result_kind
     boolean required
+  }
+  lab_panels {
+    int panel_version PK
+    timestamptz published_at
+    uuid published_by FK
+    text reason
   }
   lab_results {
     uuid result_id PK

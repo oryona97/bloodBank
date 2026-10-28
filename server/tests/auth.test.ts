@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { Pool } from 'pg';
 import { beforeAll, afterAll, it, expect, describe } from 'vitest';
@@ -47,6 +48,63 @@ afterAll(async () => {
   }
 });
 describe('Role separation and authentication', () => {
+  it('I13 rejects a correctly signed token whose expiry has passed', async () => {
+    const secret = 'expired-token-test-secret-longer-than-32-characters';
+    const configured = createApp(pool, { jwtSecret: secret });
+    const login = await request(configured)
+      .post('/api/auth/login')
+      .send({ username: 'LAB', password: 'test-password' });
+    expect(login.status).toBe(200);
+    const expired = jwt.sign({ id: login.body.user.id, username: 'LAB', role: 'LAB' }, secret, {
+      expiresIn: -1,
+    });
+    expect(
+      (await request(configured).get('/api/inventory').set('Authorization', `Bearer ${expired}`))
+        .status,
+    ).toBe(401);
+  });
+  it('I12 enforces every denied role and protected-route combination before processing payloads', async () => {
+    const id = randomUUID();
+    const operations: [string, string, string[]][] = [
+      ['GET', '/donations', ['ADMIN', 'OPERATOR', 'LAB']],
+      ['GET', '/components', ['ADMIN', 'OPERATOR', 'LAB', 'DISPENSER']],
+      ['GET', '/catalog', ['ADMIN', 'OPERATOR', 'LAB', 'DISPENSER']],
+      ['GET', '/export', ['ADMIN']],
+      ['GET', '/records?dataset=donations', ['ADMIN']],
+      ['GET', '/users', ['ADMIN']],
+      ['GET', `/donations/${id}/lab-results`, ['LAB']],
+      ['POST', '/users', ['ADMIN']],
+      ['POST', `/users/${id}`, ['ADMIN']],
+      ['POST', '/catalog/products', ['ADMIN']],
+      ['POST', '/catalog/panels', ['ADMIN']],
+      ['POST', '/records/export', ['ADMIN']],
+      ['POST', '/donations', ['OPERATOR']],
+      ['POST', `/donations/${id}/components`, ['OPERATOR']],
+      ['POST', `/components/${id}/process`, ['OPERATOR']],
+      ['POST', `/components/${id}/legacy-details`, ['OPERATOR']],
+      ['POST', `/components/${id}/discard`, ['OPERATOR', 'LAB']],
+      ['POST', `/donations/${id}/lab-results`, ['LAB']],
+      ['POST', `/donations/${id}/release`, ['LAB']],
+      ['POST', '/dispensing/preview', ['DISPENSER']],
+      ['POST', '/dispensing/confirm', ['DISPENSER']],
+      ['POST', '/dispensing/emergency', ['DISPENSER']],
+      ['POST', '/activities/cancel', ['DISPENSER']],
+    ];
+    for (const role of ['ADMIN', 'OPERATOR', 'LAB', 'DISPENSER', 'RESEARCHER'])
+      for (const [method, path, allowed] of operations)
+        if (!allowed.includes(role)) {
+          const call =
+            method === 'GET'
+              ? request(app).get('/api' + path)
+              : request(app)
+                  .post('/api' + path)
+                  .send({});
+          const response = await call
+            .set('Authorization', `Bearer ${tokens[role]}`)
+            .set('Idempotency-Key', randomUUID());
+          expect(response.status, `${role} ${method} ${path}`).toBe(403);
+        }
+  });
   it('does not create an account when its success audit cannot be saved', async () => {
     await pool.query(
       "CREATE FUNCTION fail_user_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='USER_CREATED' THEN RAISE EXCEPTION 'simulated audit failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_user_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION fail_user_audit()",

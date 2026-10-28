@@ -4,6 +4,7 @@ import { AppError } from '../errors.js';
 import { mutate } from './inventoryService.js';
 import { writeAudit, type AuditContext } from '../storage/auditRepository.js';
 import { BLOOD_TYPES } from '../../../shared/apiTypes.js';
+import { DEFAULT_RELEASE_REASON } from '../../../shared/becsTypes.js';
 
 export type LabResultInput = {
   testCode: string;
@@ -203,9 +204,10 @@ export function releaseDonation(
         );
       }
       const releaseId = randomUUID();
+      const reason = input.reason ?? DEFAULT_RELEASE_REASON;
       await client.query(
-        "INSERT INTO release_decisions(release_id,donation_id,result_version_refs,decision,approved_by) VALUES ($1,$2,$3,'APPROVE',$4)",
-        [releaseId, donationId, results.map((r) => r.result_id), context.userId],
+        "INSERT INTO release_decisions(release_id,donation_id,result_version_refs,decision,approved_by,reason) VALUES ($1,$2,$3,'APPROVE',$4,$5)",
+        [releaseId, donationId, results.map((r) => r.result_id), context.userId, reason],
       );
       await client.query(
         "UPDATE donations SET lab_status='RELEASED',verified_type=initial_type WHERE donation_id=$1",
@@ -218,7 +220,7 @@ export function releaseDonation(
       await writeAudit(
         client,
         'LAB_RELEASED',
-        { donationId, releaseId, resultIds: results.map((r) => r.result_id) },
+        { donationId, releaseId, reason, resultIds: results.map((r) => r.result_id) },
         context,
       );
       return { donationId, labStatus: 'RELEASED', releaseId };

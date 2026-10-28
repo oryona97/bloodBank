@@ -10,19 +10,45 @@ export const PRODUCT_POLICIES = {
   Cryoprecipitate: { days: 365, minC: null, maxC: -18, agitation: false, storageClass: 'FROZEN' },
 } as const;
 
+export function calculateProfileExpiry(
+  profile: { expiry_days: number; expiry_basis: 'COLLECTION' | 'SOURCE_EXPIRY' },
+  collectedAt: string,
+  sourceExpiresAt?: string,
+): string {
+  if (
+    !Number.isSafeInteger(profile.expiry_days) ||
+    profile.expiry_days <= 0 ||
+    !Number.isFinite(Date.parse(collectedAt))
+  )
+    throw new Error('A complete expiry profile and collection time are required.');
+  if (
+    profile.expiry_basis === 'SOURCE_EXPIRY' &&
+    (!sourceExpiresAt || !Number.isFinite(Date.parse(sourceExpiresAt)))
+  )
+    throw new Error('A known source expiry is required.');
+  if (!['COLLECTION', 'SOURCE_EXPIRY'].includes(profile.expiry_basis))
+    throw new Error('A valid expiry basis is required.');
+  const calculated = Date.parse(collectedAt) + profile.expiry_days * 86400000;
+  return new Date(
+    profile.expiry_basis === 'SOURCE_EXPIRY'
+      ? Math.min(calculated, Date.parse(sourceExpiresAt!))
+      : calculated,
+  ).toISOString();
+}
+
 export function calculateExpiry(
   product: ProductType,
   collectedAt: string,
   sourceExpiresAt?: string,
 ): string {
-  if (product === 'Cryoprecipitate' && !sourceExpiresAt)
-    throw new Error('A known source expiry is required.');
-  const calculated = new Date(collectedAt).getTime() + PRODUCT_POLICIES[product].days * 86400000;
-  return new Date(
-    product === 'Cryoprecipitate' && sourceExpiresAt
-      ? Math.min(calculated, new Date(sourceExpiresAt).getTime())
-      : calculated,
-  ).toISOString();
+  return calculateProfileExpiry(
+    {
+      expiry_days: PRODUCT_POLICIES[product].days,
+      expiry_basis: product === 'Cryoprecipitate' ? 'SOURCE_EXPIRY' : 'COLLECTION',
+    },
+    collectedAt,
+    sourceExpiresAt,
+  );
 }
 
 export type ComponentStock = {

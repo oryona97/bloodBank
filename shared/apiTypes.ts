@@ -15,7 +15,7 @@ export type DonationInput = {
   donationDate: string;
   donorId: string;
   donorFullName: string;
-  collectedAt?: string;
+  collectedAt: string;
 };
 export type DispenseReceipt = {
   eventId: string;

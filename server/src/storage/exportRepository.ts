@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { BLOOD_TYPES } from '../../../shared/apiTypes.js';
 import { writeAudit, type AuditContext } from './auditRepository.js';
 import { getInventory } from './inventoryRepository.js';
+const EXPORT_FORMAT_VERSION = 2;
 
 export async function getFullExport(pool: Pool, context?: AuditContext) {
   const client = await pool.connect();
@@ -9,7 +10,12 @@ export async function getFullExport(pool: Pool, context?: AuditContext) {
     await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     const timestamp = await client.query('SELECT transaction_timestamp() AS exported_at');
     // Records generation of the copy, not confirmed delivery to the browser.
-    await writeAudit(client, 'RECORDS_EXPORTED', { format: 'JSON', version: 1 }, context);
+    await writeAudit(
+      client,
+      'RECORDS_EXPORTED',
+      { format: 'JSON', version: EXPORT_FORMAT_VERSION },
+      context,
+    );
     const inventory = await getInventory(client);
     const bloodUnits = await client.query(
       'SELECT *, donation_date::text AS donation_date FROM blood_units ORDER BY created_at, unit_id',
@@ -34,6 +40,7 @@ export async function getFullExport(pool: Pool, context?: AuditContext) {
       componentTypes: 'component_types',
       storageLocations: 'storage_locations',
       labTestTypes: 'lab_test_types',
+      labPanels: 'lab_panels',
       labResults: 'lab_results',
       releaseDecisions: 'release_decisions',
       dispenseEventComponents: 'dispense_event_components',
@@ -46,7 +53,7 @@ export async function getFullExport(pool: Pool, context?: AuditContext) {
       )
     ).rows;
     const data = {
-      formatVersion: 2,
+      formatVersion: EXPORT_FORMAT_VERSION,
       ...expanded,
       exportedAt: timestamp.rows[0].exported_at,
       inventory: BLOOD_TYPES.map((blood_type) => ({ blood_type, count: inventory[blood_type] })),

@@ -33,7 +33,7 @@ import { planComponentAllocation, PRODUCT_TYPES } from './domain/components.js';
 import { confirmComponents, emergencyComponents } from './services/dispensingService.js';
 import { releaseDonation, recordResult, resultHistory } from './services/labService.js';
 import { listDonations } from './storage/donationsRepository.js';
-import { catalog, reviseProduct } from './services/catalogService.js';
+import { catalog, reviseProduct, publishPanel } from './services/catalogService.js';
 
 const auditContext = (res: Response) => res.locals.audit as AuditContext;
 
@@ -142,6 +142,47 @@ export function createApp(pool: Pool, options: { now?: () => Date; jwtSecret?: s
       .status(201)
       .json(
         await reviseProduct(
+          pool,
+          requestKeySchema.parse(req.get('Idempotency-Key')),
+          input,
+          auditContext(res),
+        ),
+      );
+  });
+  app.post('/api/catalog/panels', requireRoles('ADMIN'), async (req, res) => {
+    const input = z
+      .object({
+        reason: z.string().trim().min(3).max(500),
+        tests: z
+          .array(
+            z
+              .object({
+                code: z.string().regex(/^[A-Z][A-Z0-9_]{0,39}$/),
+                resultKind: z.enum(['TYPING', 'SCREENING']),
+                required: z.literal(true),
+              })
+              .strict(),
+          )
+          .min(5)
+          .max(40),
+      })
+      .strict()
+      .refine((value) => {
+        const codes = value.tests.map((t) => t.code);
+        return (
+          new Set(codes).size === codes.length &&
+          value.tests.filter((t) => t.resultKind === 'TYPING').length === 1 &&
+          value.tests.some((t) => t.code === 'ABO_RH' && t.resultKind === 'TYPING') &&
+          ['HIV', 'HBV', 'HCV', 'SYPHILIS'].every((code) =>
+            value.tests.some((t) => t.code === code && t.resultKind === 'SCREENING'),
+          )
+        );
+      }, 'Keep blood typing and all four baseline screening tests, with unique test codes.')
+      .parse(req.body);
+    res
+      .status(201)
+      .json(
+        await publishPanel(
           pool,
           requestKeySchema.parse(req.get('Idempotency-Key')),
           input,
@@ -273,7 +314,12 @@ export function createApp(pool: Pool, options: { now?: () => Date; jwtSecret?: s
     const id = z.uuid().parse(req.params.id);
     const input = z
       .discriminatedUnion('decision', [
-        z.object({ decision: z.literal('APPROVE') }).strict(),
+        z
+          .object({
+            decision: z.literal('APPROVE'),
+            reason: z.string().trim().min(3).max(500).optional(),
+          })
+          .strict(),
         z
           .object({ decision: z.literal('REJECT'), reason: z.string().trim().min(3).max(500) })
           .strict(),

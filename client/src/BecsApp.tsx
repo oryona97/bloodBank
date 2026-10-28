@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { BLOOD_TYPES, type BloodType } from '../../shared/apiTypes.js';
 import {
   PRODUCTS,
+  COMPONENT_STATUSES,
+  DEFAULT_RELEASE_REASON,
   ROLES,
   type Product,
   type SessionUser,
@@ -235,11 +237,6 @@ export function BecsApp() {
           <span>{title(user.role)}</span>
           <button onClick={logout}>Sign out</button>
         </div>
-        <p className="becs-demo">
-          Educational simulation
-          <br />
-          Synthetic records only
-        </p>
       </aside>
       <main id="becs-main" className="becs-main">
         <header className="becs-header">
@@ -301,6 +298,30 @@ function Inventory() {
               ))}
             </div>
           </Panel>
+          <Panel title={`${product} stock by blood type and status`}>
+            <div className="becs-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Blood type</th>
+                    {COMPONENT_STATUSES.map((status) => (
+                      <th key={status}>{title(status)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {BLOOD_TYPES.map((type) => (
+                    <tr key={type}>
+                      <th>{type}</th>
+                      {COMPONENT_STATUSES.map((status) => (
+                        <td key={status}>{data.statusByBloodType[product][type][status]}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
           <Panel title="Component status overview">
             <div className="becs-table-wrap">
               <table>
@@ -354,6 +375,8 @@ function Donations() {
     [collected, setCollected] = useState(localTime),
     [selected, setSelected] = useState(''),
     [template, setTemplate] = useState('PRBC_FFP');
+  const [detailId, setDetailId] = useState('');
+  const detail = list.data?.donations.find((d) => d.donationId === detailId);
   async function submit(e: FormEvent) {
     e.preventDefault();
     const collectedAt = new Date(collected).toISOString();
@@ -368,6 +391,7 @@ function Donations() {
       },
       (value) => {
         setSelected(value.donationId);
+        setDetailId(value.donationId);
         list.reload();
       },
       'Donation registered in quarantine. Complete processing and laboratory clearance before issue.',
@@ -456,16 +480,24 @@ function Donations() {
         </form>
         <p>Cryoprecipitate is produced separately from an unissued plasma component.</p>
       </Panel>
-      <DonationTable donations={list.data?.donations ?? []} identifying />
+      {detail && (
+        <DonationDetails
+          key={`${detail.donationId}-${detail.labStatus}-${detail.processedAt}`}
+          donation={detail}
+        />
+      )}
+      <DonationTable donations={list.data?.donations ?? []} identifying onOpen={setDetailId} />
     </>
   );
 }
 function DonationTable({
   donations,
   identifying = false,
+  onOpen,
 }: {
   donations: DonationRecord[];
   identifying?: boolean;
+  onOpen?: (id: string) => void;
 }) {
   return (
     <Panel title="Donation work list">
@@ -485,7 +517,17 @@ function DonationTable({
             {donations.map((d) => (
               <tr key={d.donationId}>
                 <td>
-                  <code title={d.donationId}>{d.donationId.slice(0, 8)}</code>
+                  {onOpen ? (
+                    <button
+                      title={d.donationId}
+                      aria-label={`Open donation ${d.donationId}`}
+                      onClick={() => onOpen(d.donationId)}
+                    >
+                      {d.donationId.slice(0, 8)}
+                    </button>
+                  ) : (
+                    <code title={d.donationId}>{d.donationId.slice(0, 8)}</code>
+                  )}
                 </td>
                 {identifying && (
                   <td>
@@ -505,6 +547,78 @@ function DonationTable({
         </table>
         {!donations.length && <p>No donations to display.</p>}
       </div>
+    </Panel>
+  );
+}
+
+function DonationDetails({ donation }: { donation: DonationRecord }) {
+  const components = useLoad<{ components: ComponentRecord[] }>(
+    `/components?donationId=${donation.donationId}`,
+  );
+  return (
+    <Panel title="Donation details and components">
+      <p>
+        <strong>Donation {donation.donationId}</strong>
+      </p>
+      {donation.donorFullName && (
+        <p>
+          {donation.donorFullName} · {donation.donorId}
+        </p>
+      )}
+      <p>
+        Collected: {date(donation.collectedAt)} · Blood type:{' '}
+        {donation.verifiedType ?? donation.bloodType} · Panel {donation.panelVersion} ·{' '}
+        <Badge value={donation.labStatus} />
+      </p>
+      <button disabled={components.busy} onClick={components.reload}>
+        Refresh donation components
+      </button>
+      <Message error={components.error} />
+      {components.busy && <p role="status">Loading donation components…</p>}
+      <div className="becs-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Product</th>
+              <th>Status</th>
+              <th>Produced · Jerusalem</th>
+              <th>Expiry · Jerusalem</th>
+              <th>Storage and source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {components.data?.components.map((c) => (
+              <tr key={c.componentId}>
+                <td>
+                  <code title={c.componentId}>{c.componentId.slice(0, 8)}</code>
+                </td>
+                <td>
+                  {c.productType}
+                  <small>Profile {c.policyVersion}</small>
+                </td>
+                <td>
+                  <Badge value={c.status} />
+                  {c.discardReason && <small>{c.discardReason}</small>}
+                </td>
+                <td>{date(c.producedAt)}</td>
+                <td>{date(c.expiresAt)}</td>
+                <td>
+                  {c.storageLocation ?? 'Unverified'}
+                  {c.sourceComponentId && (
+                    <small title={c.sourceComponentId}>
+                      Source {c.sourceComponentId.slice(0, 8)}
+                    </small>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!components.busy && !components.data?.components.length && (
+        <p>No components produced yet.</p>
+      )}
     </Panel>
   );
 }
@@ -824,6 +938,8 @@ function Components({ role }: { role: string }) {
 function Laboratory() {
   const work = useLoad<{ donations: DonationRecord[] }>('/donations'),
     action = useAction();
+  const catalogue = useLoad<Catalogue>('/catalog');
+  const [approvalReason, setApprovalReason] = useState(DEFAULT_RELEASE_REASON);
   const [selected, setSelected] = useState(''),
     [testCode, setCode] = useState('ABO_RH'),
     [value, setValue] = useState('A+'),
@@ -857,21 +973,24 @@ function Laboratory() {
   }, [loadHistory]);
   const donation = work.data?.donations.find((d) => d.donationId === selected);
   const latest = Object.fromEntries(history.map((r) => [r.testCode, r]));
+  const panelTests =
+    catalogue.data?.tests.filter((test) => test.panel_version === donation?.panelVersion) ?? [];
+  const selectDonation = (id: string) => {
+    historyRequest.current++;
+    setHistory([]);
+    setHistoryError('');
+    setReason('');
+    setApprovalReason(DEFAULT_RELEASE_REASON);
+    setCode('ABO_RH');
+    setValue(work.data?.donations.find((d) => d.donationId === id)?.bloodType ?? 'A+');
+    setSelected(id);
+  };
   return (
     <>
       <Panel title="Laboratory work queue">
         <label className="becs-field">
           Donation
-          <select
-            value={selected}
-            onChange={(e) => {
-              historyRequest.current++;
-              setHistory([]);
-              setHistoryError('');
-              setReason('');
-              setSelected(e.target.value);
-            }}
-          >
+          <select value={selected} onChange={(e) => selectDonation(e.target.value)}>
             <option value="">Choose a donation</option>
             {work.data?.donations.map((d) => (
               <option key={d.donationId} value={d.donationId}>
@@ -890,9 +1009,16 @@ function Laboratory() {
           Refresh laboratory
         </button>
       </Panel>
-      <Message error={action.error || work.error || historyError} notice={action.notice} />
+      <Message
+        error={action.error || work.error || historyError || catalogue.error}
+        notice={action.notice}
+      />
       {donation && (
         <>
+          <DonationDetails
+            key={`${donation.donationId}-${donation.labStatus}-${donation.processedAt}`}
+            donation={donation}
+          />
           <Panel title="Record or correct a result">
             <p>
               Initial blood type: <strong>{donation.bloodType}</strong> · Panel{' '}
@@ -928,8 +1054,8 @@ function Laboratory() {
                     setValue(e.target.value === 'ABO_RH' ? donation.bloodType : 'NEGATIVE');
                   }}
                 >
-                  {['ABO_RH', 'HIV', 'HBV', 'HCV', 'SYPHILIS'].map((t) => (
-                    <option key={t}>{t}</option>
+                  {panelTests.map((t) => (
+                    <option key={t.code}>{t.code}</option>
                   ))}
                 </select>
               </label>
@@ -977,20 +1103,34 @@ function Laboratory() {
               overrides expiry, disposal or storage requirements.
             </p>
             <div className="becs-result-grid">
-              {['ABO_RH', 'HIV', 'HBV', 'HCV', 'SYPHILIS'].map((t) => (
-                <div key={t}>
-                  <strong>{t}</strong>
-                  <span>{latest[t]?.value ?? 'Missing'}</span>
+              {panelTests.map((t) => (
+                <div key={t.code}>
+                  <strong>{t.code}</strong>
+                  <span>{latest[t.code]?.value ?? 'Missing'}</span>
                 </div>
               ))}
             </div>
+            <label className="becs-field">
+              Approval reason
+              <input
+                minLength={3}
+                maxLength={500}
+                value={approvalReason}
+                onChange={(e) => setApprovalReason(e.target.value)}
+              />
+            </label>
             <div className="becs-toolbar">
               <button
-                disabled={action.busy || donation.labStatus === 'REJECTED'}
+                disabled={
+                  action.busy ||
+                  approvalReason.trim().length < 3 ||
+                  donation.labStatus === 'REJECTED' ||
+                  !panelTests.length
+                }
                 onClick={() =>
                   void action.run(
                     `/donations/${selected}/release`,
-                    { decision: 'APPROVE' },
+                    { decision: 'APPROVE', reason: approvalReason },
                     () => work.reload(),
                     'Laboratory release approved. Only eligible components become available.',
                   )
@@ -1044,7 +1184,7 @@ function Laboratory() {
           </Panel>
         </>
       )}
-      <DonationTable donations={work.data?.donations ?? []} />
+      <DonationTable donations={work.data?.donations ?? []} onOpen={selectDonation} />
     </>
   );
 }
@@ -1244,6 +1384,10 @@ function CatalogueScreen() {
     action = useAction();
   const [product, setProduct] = useState<Product>('PRBC'),
     [days, setDays] = useState(42);
+  const [extraTest, setExtraTest] = useState(''),
+    [panelReason, setPanelReason] = useState('');
+  const activeTests =
+    list.data?.tests.filter((t) => t.panel_version === list.data?.activePanelVersion) ?? [];
   return (
     <>
       <Panel title="Versioned product policies">
@@ -1258,6 +1402,7 @@ function CatalogueScreen() {
                 <th>Product</th>
                 <th>Version</th>
                 <th>Days from collection</th>
+                <th>Expiry basis</th>
                 <th>Storage</th>
                 <th>Temperature °C</th>
                 <th>Agitation</th>
@@ -1269,6 +1414,11 @@ function CatalogueScreen() {
                   <th>{p.code}</th>
                   <td>{p.policy_version}</td>
                   <td>{p.expiry_days}</td>
+                  <td>
+                    {p.expiry_basis === 'SOURCE_EXPIRY'
+                      ? 'Collection, capped by source expiry'
+                      : 'Collection time'}
+                  </td>
                   <td>{title(p.storage_class)}</td>
                   <td>
                     {p.min_c === null ? `At or below ${p.max_c}` : `${p.min_c} to ${p.max_c}`}
@@ -1335,8 +1485,8 @@ function CatalogueScreen() {
       </Panel>
       <Panel title="Required laboratory tests">
         <p>
-          Each donation retains its panel version. This demonstration uses blood typing and HIV,
-          HBV, HCV and syphilis screening.
+          New donations use panel {list.data?.activePanelVersion ?? '…'}. Existing donations retain
+          their original panel and results.
         </p>
         <div className="becs-table-wrap">
           <table>
@@ -1360,6 +1510,67 @@ function CatalogueScreen() {
             </tbody>
           </table>
         </div>
+        <form
+          className="becs-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void action.run(
+              '/catalog/panels',
+              {
+                reason: panelReason,
+                tests: [
+                  ...activeTests.map((t) => ({
+                    code: t.code,
+                    resultKind: t.result_kind,
+                    required: true,
+                  })),
+                  { code: extraTest, resultKind: 'SCREENING', required: true },
+                ],
+              },
+              () => {
+                list.reload();
+                setExtraTest('');
+                setPanelReason('');
+              },
+              'New laboratory panel published for future donations.',
+            );
+          }}
+        >
+          <label>
+            Additional required screening code
+            <input
+              required
+              pattern="[A-Z][A-Z0-9_]{0,39}"
+              maxLength={40}
+              value={extraTest}
+              onChange={(e) => setExtraTest(e.target.value.toUpperCase())}
+              placeholder="DEMO_SCREEN"
+            />
+          </label>
+          <label>
+            Panel change reason
+            <input
+              required
+              minLength={3}
+              maxLength={500}
+              value={panelReason}
+              onChange={(e) => setPanelReason(e.target.value)}
+            />
+          </label>
+          <button
+            disabled={
+              action.busy || !activeTests.length || activeTests.some((t) => t.code === extraTest)
+            }
+          >
+            Publish new panel version
+          </button>
+        </form>
+        <p>Publishing retains the current required tests and adds the screening above.</p>
+        {list.data?.panels.map((panel) => (
+          <p key={panel.panel_version}>
+            Panel {panel.panel_version} · {date(panel.published_at)} · {panel.reason}
+          </p>
+        ))}
       </Panel>
     </>
   );
