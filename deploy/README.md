@@ -1,16 +1,29 @@
 # Production deployment
 
-Run these commands on the Linux server hosting Docker and the existing Nginx
-container. This setup deploys the app and PostgreSQL. Nginx continues to manage
-the public domain, HTTPS and the server's ports 80/443.
+The app runs in Docker on the Ubuntu VM at `192.168.1.135`. Nginx runs in a
+separate Proxmox LXC at `192.168.1.82`. Run the deployment script on the Docker
+VM; install the Nginx configuration inside the Nginx LXC.
 
-| File                                     | Purpose                                                                    |
-| ---------------------------------------- | -------------------------------------------------------------------------- |
-| `deploy-prod.sh`                         | Validates settings, deploys containers and waits for health checks.        |
-| `compose.production.yaml`                | Standalone production stack with persistent storage and the Nginx network. |
-| `.env.production`                        | Your server settings and credentials, excluded from Git.                   |
-| `.env.production.example`                | Template for the production settings.                                      |
-| `deploy/nginx/bloodbank.proida.dev.conf` | Virtual host to add to the existing Nginx configuration.                   |
+Requests follow this route:
+
+```text
+bloodbank.proida.dev -> Nginx LXC 192.168.1.82:443
+                    -> Docker VM 192.168.1.135:3001 -> app container port 3001
+```
+
+The Docker VM address comes from the existing published ports on this server.
+Verify it with `hostname -I` on that VM if its network settings have changed.
+Nginx manages the public domain, HTTPS and ports 80/443. Docker publishes the
+application on the VM's private address; PostgreSQL stays on its private Docker
+network. A shared Docker network between Nginx and the app is not required.
+
+| File                                     | Purpose                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------- |
+| `deploy-prod.sh`                         | Validates settings, deploys containers and waits for health checks.         |
+| `compose.production.yaml`                | Production stack with persistent storage and a private host port for Nginx. |
+| `.env.production`                        | Your server settings and credentials, excluded from Git.                    |
+| `.env.production.example`                | Template for the production settings.                                       |
+| `deploy/nginx/bloodbank.proida.dev.conf` | Virtual host to add to the existing Nginx configuration.                    |
 
 Production does not merge the local `compose.yaml` or load the local `.env`.
 It sets `DEMO_MODE=false` and starts with the administrator you configure.
@@ -35,30 +48,41 @@ Docker access, invoke it as `sudo bash ./deploy-prod.sh`.
    random secrets, for example with `openssl rand -hex 32`. Values containing
    `$` or `#` should be single-quoted so Compose treats them literally.
 
-3. Set `PROXY_NETWORK` to the existing user-defined network attached to Nginx.
-   Find its name with:
+3. Set the published address and port in `.env.production`:
 
-   ```sh
-   docker inspect YOUR_NGINX_CONTAINER --format '{{json .NetworkSettings.Networks}}'
+   ```dotenv
+   APP_BIND_IP=192.168.1.135
+   APP_PORT=3001
    ```
 
-   If Nginx has no user-defined network, create one and connect it once:
+   `APP_BIND_IP` must belong to the VM running Docker. Nginx's address
+   (`192.168.1.82`) belongs to the separate LXC. A loopback binding such as
+   `127.0.0.1` is reachable only within the Docker VM. Remove the obsolete
+   `PROXY_NETWORK` setting if you used the earlier deployment template.
+   If the Proxmox/network firewall filters this traffic, allow TCP connections
+   from `192.168.1.82` to `192.168.1.135:3001`. Binding the private address selects
+   the listening interface; use the firewall to restrict which LAN hosts can
+   connect. PostgreSQL has no published port in this production stack.
 
-   ```sh
-   docker network create proxy
-   docker network connect proxy YOUR_NGINX_CONTAINER
+4. Keep the existing project and volume settings when upgrading the running
+   `bloodbank-app-1` / `bloodbank-db-1` stack:
+
+   ```dotenv
+   COMPOSE_PROJECT_NAME=bloodbank
+   APP_IMAGE=bloodbank-app
+   POSTGRES_VOLUME_NAME=bloodbank_bloodbank_data
    ```
 
-   Then set `PROXY_NETWORK=proxy`. Also record this network attachment in the
-   existing Nginx deployment settings so it survives Nginx container replacement.
-   The app's network membership and `bloodbank` alias are managed by the
-   production Compose file on every deployment. PostgreSQL joins only the
-   private database network. Neither app nor database publishes a host port.
+   Verify the volume before deploying:
 
-4. Choose a stable `POSTGRES_VOLUME_NAME` and keep it unchanged on later
-   deployments. The example creates `bloodbank-prod-data` for a new database.
-   If the server already contains application data, read the next section
-   before starting the stack.
+   ```sh
+   docker inspect bloodbank-db-1 --format '{{json .Mounts}}'
+   ```
+
+   Use the actual named volume mounted at `/var/lib/postgresql/data` and reuse
+   the existing database password. Read the existing-data section below if the
+   storage or database setup differs. For an entirely new installation, choose
+   a new stable volume name and retain it on subsequent deployments.
 
 5. Deploy from the repository root:
 
@@ -72,10 +96,10 @@ Docker access, invoke it as `sudo bash ./deploy-prod.sh`.
    Pending migrations run on app startup; there is no separate `--migrate`
    option. Health checks call `/api/health`, which also records audit events.
 
-6. Follow [the Nginx instructions](nginx/README.md) to add the domain, certificate
-   paths and configuration to the existing Nginx container. Point the DNS record
-   for `bloodbank.proida.dev` to this server. The upstream is
-   `http://bloodbank:3001`. Once DNS and HTTPS are configured, verify:
+6. Follow [the Nginx instructions](nginx/README.md) inside the LXC at
+   `192.168.1.82`. Its upstream is `http://192.168.1.135:3001`. Use the same public
+   DNS/router entry point as the other domains served by this Nginx LXC.
+   Once DNS and HTTPS are configured, verify:
 
    ```sh
    curl --fail --show-error https://bloodbank.proida.dev/api/health
@@ -87,18 +111,27 @@ Docker access, invoke it as `sudo bash ./deploy-prod.sh`.
 
 ## Existing data
 
-This production stack uses a separate project name (`bloodbank-prod` by default)
-and a new database volume by default. It does not adopt a previously started
-`docker run` container or automatically transfer its data.
+The example matches the existing regular Compose project (`bloodbank`), service
+names (`app` and `db`), image (`bloodbank-app`) and default volume
+(`bloodbank_bloodbank_data`). With those settings, the production Compose file
+updates the existing services and retains their database storage. Running the
+regular Compose command originally was valid; its localhost-only binding is
+what prevented the separate Nginx LXC from reaching the app.
+
+Keep the project and volume names unchanged when switching configurations.
+Creating a different project with a different volume creates another database;
+it does not transfer the existing data. A separately started `docker run`
+container also requires an explicit storage migration.
 
 To reuse data, first identify the existing PostgreSQL version, storage mount,
 database/user names and credentials, and take a database backup. This file
 expects PostgreSQL 17 with database and user named `bloodbank`. Set
 `POSTGRES_VOLUME_NAME` to the actual existing named volume only if those settings
-match. Stop the old application and database before attaching that storage to
-the new database service; two PostgreSQL containers must never use the same data
-directory simultaneously. Bind mounts or another database layout need an
-explicit storage change or backup/restore first.
+match. If you intentionally move the volume to a different Compose project,
+stop the old application and database before starting the new database service;
+two PostgreSQL containers must never use the same data directory simultaneously.
+Bind mounts or another database layout need an explicit storage change or
+backup/restore first.
 
 `POSTGRES_PASSWORD` must match the database's existing password. Changing the
 variable does not change an initialized database's credentials. Likewise,
@@ -130,9 +163,10 @@ with its registry if needed. Use a specific release tag to choose the deployed
 version. With `--no-build`, Compose may pull the configured image if it is absent
 locally; it will not rebuild it. All image modes use the same database volume.
 
-The Nginx template uses Docker DNS to refresh the app container's address after
-replacement. Updates can briefly interrupt requests; the script reports container
-health separately from public DNS, certificates and Nginx routing.
+Nginx targets the VM's stable published address, so app container replacement
+does not require an Nginx reload. Updates can briefly interrupt requests. The
+script prints the published address and reports container health separately
+from public DNS, certificates and connectivity from the Nginx LXC.
 
 Inspect the production services with the same file and env configuration:
 
@@ -147,4 +181,5 @@ The script validates configuration without printing credentials.
 
 References: [Compose deployment and health waiting](https://docs.docker.com/reference/cli/docker/compose/up/),
 [environment settings](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/),
-[persistent volumes](https://docs.docker.com/reference/compose-file/volumes/).
+[persistent volumes](https://docs.docker.com/reference/compose-file/volumes/),
+[private address port publishing](https://docs.docker.com/engine/network/port-publishing/).

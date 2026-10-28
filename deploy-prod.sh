@@ -24,7 +24,7 @@ Options:
   -h, --help          Show this help.
 
 Migrations run automatically when the app container starts.
-The existing Nginx container must share the configured PROXY_NETWORK.
+Nginx in the separate Proxmox LXC connects to APP_BIND_IP:APP_PORT.
 EOF
 }
 
@@ -99,6 +99,7 @@ echo '==> Deploying Blood Bank and waiting for healthy services...'
 
 echo '==> Container status:'
 "${COMPOSE[@]}" ps
+APP_PUBLISHED_ADDRESS="$("${COMPOSE[@]}" port app 3001)"
 echo '==> Production containers are healthy.'
-echo '    Nginx upstream: http://bloodbank:3001'
+printf '    Nginx upstream: http://%s\n' "$APP_PUBLISHED_ADDRESS"
 echo '    Public URL after DNS/TLS/Nginx setup: https://bloodbank.proida.dev'

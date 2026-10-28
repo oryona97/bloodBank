@@ -50,13 +50,14 @@ Locally, use `npm run db:seed -- --batch 2026-10-19`. Reusing a label returns th
 
 In explicit demo mode, an omitted `JWT_SECRET` generates a random process secret; restart requires signing in again. Outside demo mode, provide a random secret of at least 32 characters and explicit `ADMIN_USERNAME`/`ADMIN_PASSWORD` for initial setup. Default accounts and authentication bypass are absent outside demo mode. Existing accounts are preserved.
 
-## Deploy behind the existing Nginx container
+## Deploy behind Nginx in the Proxmox LXC
 
 Use [the production deployment guide](deploy/README.md), `deploy-prod.sh`,
 `compose.production.yaml` and `.env.production.example`. The production stack
-joins Nginx's existing Docker network at `bloodbank:3001`, stores PostgreSQL data
-in a persistent named volume and uses its own settings separately from the
-local demo. The guide includes initial setup, existing-data handling, image
+publishes the app on the Docker VM's private address (`192.168.1.135:3001`) for
+Nginx in the separate LXC (`192.168.1.82`). It uses separate production settings
+and retains the existing `bloodbank` project and database volume by default.
+The guide includes initial setup, existing-data handling, image
 deployment options and the Nginx configuration for `bloodbank.proida.dev`.
 
 ## Upgrade an existing database

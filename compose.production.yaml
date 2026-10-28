@@ -1,9 +1,9 @@
 # Standalone production stack. Do not merge with the local-demo compose.yaml.
-name: ${COMPOSE_PROJECT_NAME:-bloodbank-prod}
+name: ${COMPOSE_PROJECT_NAME:-bloodbank}
 
 services:
   app:
-    image: ${APP_IMAGE:-bloodbank:production}
+    image: ${APP_IMAGE:-bloodbank-app}
     build: .
     init: true
     restart: unless-stopped
@@ -20,14 +20,17 @@ services:
       PGDATABASE: bloodbank
       PGUSER: bloodbank
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+    ports:
+      - target: 3001
+        published: '${APP_PORT:-3001}'
+        host_ip: ${APP_BIND_IP:?Set APP_BIND_IP to the private IPv4 address of the Docker VM}
+        protocol: tcp
     depends_on:
       db:
         condition: service_healthy
     networks:
       database: {}
-      proxy:
-        aliases:
-          - bloodbank
+      web: {}
     healthcheck:
       test:
         - CMD
@@ -69,9 +72,7 @@ services:
 networks:
   database:
     internal: true
-  proxy:
-    external: true
-    name: ${PROXY_NETWORK:?Set PROXY_NETWORK to the existing Nginx Docker network}
+  web: {}
 
 volumes:
   bloodbank_data:
