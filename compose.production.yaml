@@ -1,0 +1,78 @@
+# Standalone production stack. Do not merge with the local-demo compose.yaml.
+name: ${COMPOSE_PROJECT_NAME:-bloodbank-prod}
+
+services:
+  app:
+    image: ${APP_IMAGE:-bloodbank:production}
+    build: .
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DEMO_MODE: 'false'
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env.production}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?Set ADMIN_USERNAME in .env.production}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env.production}
+      HOST: 0.0.0.0
+      PORT: '3001'
+      PGHOST: db
+      PGPORT: '5432'
+      PGDATABASE: bloodbank
+      PGUSER: bloodbank
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      database: {}
+      proxy:
+        aliases:
+          - bloodbank
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bloodbank
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: bloodbank
+    volumes:
+      - bloodbank_data:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bloodbank -d bloodbank']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+networks:
+  database:
+    internal: true
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:?Set PROXY_NETWORK to the existing Nginx Docker network}
+
+volumes:
+  bloodbank_data:
+    name: ${POSTGRES_VOLUME_NAME:?Set POSTGRES_VOLUME_NAME in .env.production}

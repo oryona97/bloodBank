@@ -50,6 +50,15 @@ Locally, use `npm run db:seed -- --batch 2026-10-19`. Reusing a label returns th
 
 In explicit demo mode, an omitted `JWT_SECRET` generates a random process secret; restart requires signing in again. Outside demo mode, provide a random secret of at least 32 characters and explicit `ADMIN_USERNAME`/`ADMIN_PASSWORD` for initial setup. Default accounts and authentication bypass are absent outside demo mode. Existing accounts are preserved.
 
+## Deploy behind the existing Nginx container
+
+Use [the production deployment guide](deploy/README.md), `deploy-prod.sh`,
+`compose.production.yaml` and `.env.production.example`. The production stack
+joins Nginx's existing Docker network at `bloodbank:3001`, stores PostgreSQL data
+in a persistent named volume and uses its own settings separately from the
+local demo. The guide includes initial setup, existing-data handling, image
+deployment options and the Nginx configuration for `bloodbank.proida.dev`.
+
 ## Upgrade an existing database
 
 Migrations 005–010 preserve original IDs, dates, creation times, dispensing links and audit. Legacy available units become quarantined `LEGACY` components with unknown product, collection time, storage and expiry; issued units remain issued. No results or approval are invented. Broad `WORKER` accounts are disabled; an administrator can assign a new explicit role and enable them.
